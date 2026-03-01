@@ -158,6 +158,7 @@ public sealed class AuthorizationController(
             return Challenge(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
         }
 
+        var userClaims = await GetUserClaimsAsync(user);
         var payload = new Dictionary<string, object?>
         {
             [OpenIddictConstants.Claims.Subject] = user.Id
@@ -171,24 +172,29 @@ public sealed class AuthorizationController(
                           onlyOpenIdScope;
         if (includeName)
         {
-            payload[OpenIddictConstants.Claims.Name] = $"{user.GivenName} {user.FamilyName}".Trim();
+            payload[OpenIddictConstants.Claims.Name] =
+                GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.Name, $"{user.GivenName} {user.FamilyName}".Trim());
         }
 
         if (principal.HasScope(OpenIddictConstants.Scopes.Profile))
         {
-            payload[OpenIddictConstants.Claims.GivenName] = user.GivenName;
-            payload[OpenIddictConstants.Claims.FamilyName] = user.FamilyName;
-            payload[OpenIddictConstants.Claims.PreferredUsername] = user.UserName;
-            payload[OpenIddictConstants.Claims.MiddleName] = "Q";
-            payload[OpenIddictConstants.Claims.Nickname] = user.UserName;
-            payload[OpenIddictConstants.Claims.Profile] = "https://idenrya.local/users/foo";
-            payload[OpenIddictConstants.Claims.Picture] = "https://idenrya.local/assets/foo.png";
-            payload[OpenIddictConstants.Claims.Website] = "https://idenrya.local";
-            payload[OpenIddictConstants.Claims.Gender] = "unspecified";
-            payload[OpenIddictConstants.Claims.Birthdate] = "1970-01-01";
-            payload[OpenIddictConstants.Claims.Zoneinfo] = "America/New_York";
-            payload[OpenIddictConstants.Claims.Locale] = "en-US";
-            payload[OpenIddictConstants.Claims.UpdatedAt] = 1700000000;
+            payload[OpenIddictConstants.Claims.GivenName] =
+                GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.GivenName, user.GivenName);
+            payload[OpenIddictConstants.Claims.FamilyName] =
+                GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.FamilyName, user.FamilyName);
+            payload[OpenIddictConstants.Claims.PreferredUsername] =
+                GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.PreferredUsername, user.UserName);
+
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.MiddleName);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Nickname);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Profile);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Picture);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Website);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Gender);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Birthdate);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Zoneinfo);
+            AddStringClaimIfPresent(payload, userClaims, OpenIddictConstants.Claims.Locale);
+            AddUpdatedAtClaimIfPresent(payload, userClaims);
         }
 
         if (principal.HasScope(OpenIddictConstants.Scopes.Email))
@@ -309,16 +315,35 @@ public sealed class AuthorizationController(
         DateTimeOffset authenticationTime)
     {
         var principal = await signInManager.CreateUserPrincipalAsync(user);
+        var userClaims = await GetUserClaimsAsync(user);
 
         principal.SetClaim(OpenIddictConstants.Claims.Subject, user.Id);
-        principal.SetClaim(OpenIddictConstants.Claims.PreferredUsername, user.UserName);
-        principal.SetClaim(OpenIddictConstants.Claims.Name, $"{user.GivenName} {user.FamilyName}".Trim());
-        principal.SetClaim(OpenIddictConstants.Claims.GivenName, user.GivenName);
-        principal.SetClaim(OpenIddictConstants.Claims.FamilyName, user.FamilyName);
+        principal.SetClaim(
+            OpenIddictConstants.Claims.PreferredUsername,
+            GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.PreferredUsername, user.UserName));
+        principal.SetClaim(
+            OpenIddictConstants.Claims.Name,
+            GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.Name, $"{user.GivenName} {user.FamilyName}".Trim()));
+        principal.SetClaim(
+            OpenIddictConstants.Claims.GivenName,
+            GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.GivenName, user.GivenName));
+        principal.SetClaim(
+            OpenIddictConstants.Claims.FamilyName,
+            GetClaimOrDefault(userClaims, OpenIddictConstants.Claims.FamilyName, user.FamilyName));
         principal.SetClaim(OpenIddictConstants.Claims.Email, user.Email);
         principal.SetClaim(OpenIddictConstants.Claims.EmailVerified, user.EmailConfirmed);
         principal.SetClaim(OpenIddictConstants.Claims.PhoneNumber, user.PhoneNumber);
         principal.SetClaim(OpenIddictConstants.Claims.PhoneNumberVerified, user.PhoneNumberConfirmed);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.MiddleName);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Nickname);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Profile);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Picture);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Website);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Gender);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Birthdate);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Zoneinfo);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.Locale);
+        AddPrincipalClaimIfPresent(principal, userClaims, OpenIddictConstants.Claims.UpdatedAt);
 
         principal.SetClaim(OpenIddictConstants.Claims.AuthenticationTime, authenticationTime.ToUnixTimeSeconds());
 
@@ -382,6 +407,16 @@ public sealed class AuthorizationController(
             OpenIddictConstants.Claims.EmailVerified or
             OpenIddictConstants.Claims.PhoneNumber or
             OpenIddictConstants.Claims.PhoneNumberVerified or
+            OpenIddictConstants.Claims.MiddleName or
+            OpenIddictConstants.Claims.Nickname or
+            OpenIddictConstants.Claims.Profile or
+            OpenIddictConstants.Claims.Picture or
+            OpenIddictConstants.Claims.Website or
+            OpenIddictConstants.Claims.Gender or
+            OpenIddictConstants.Claims.Birthdate or
+            OpenIddictConstants.Claims.Zoneinfo or
+            OpenIddictConstants.Claims.Locale or
+            OpenIddictConstants.Claims.UpdatedAt or
             OpenIddictConstants.Claims.Address =>
             [
                 OpenIddictConstants.Destinations.AccessToken
@@ -413,6 +448,75 @@ public sealed class AuthorizationController(
         catch (JsonException)
         {
             return false;
+        }
+    }
+
+    private async Task<Dictionary<string, string>> GetUserClaimsAsync(ApplicationUser user)
+    {
+        var claims = await userManager.GetClaimsAsync(user);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var claim in claims)
+        {
+            if (string.IsNullOrWhiteSpace(claim.Type) || string.IsNullOrWhiteSpace(claim.Value))
+            {
+                continue;
+            }
+
+            result[claim.Type] = claim.Value;
+        }
+
+        return result;
+    }
+
+    private static string? GetClaimOrDefault(
+        IReadOnlyDictionary<string, string> claims,
+        string claimType,
+        string? fallback)
+    {
+        return claims.TryGetValue(claimType, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : fallback;
+    }
+
+    private static void AddStringClaimIfPresent(
+        IDictionary<string, object?> payload,
+        IReadOnlyDictionary<string, string> claims,
+        string claimType)
+    {
+        if (claims.TryGetValue(claimType, out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            payload[claimType] = value;
+        }
+    }
+
+    private static void AddUpdatedAtClaimIfPresent(
+        IDictionary<string, object?> payload,
+        IReadOnlyDictionary<string, string> claims)
+    {
+        if (!claims.TryGetValue(OpenIddictConstants.Claims.UpdatedAt, out var rawValue) ||
+            string.IsNullOrWhiteSpace(rawValue))
+        {
+            return;
+        }
+
+        if (long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericValue))
+        {
+            payload[OpenIddictConstants.Claims.UpdatedAt] = numericValue;
+            return;
+        }
+
+        payload[OpenIddictConstants.Claims.UpdatedAt] = rawValue;
+    }
+
+    private static void AddPrincipalClaimIfPresent(
+        ClaimsPrincipal principal,
+        IReadOnlyDictionary<string, string> claims,
+        string claimType)
+    {
+        if (claims.TryGetValue(claimType, out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            principal.SetClaim(claimType, value);
         }
     }
 }
