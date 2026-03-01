@@ -1,0 +1,38 @@
+services:
+  server:
+    environment:
+      SPRING_THYMELEAF_PREFIX: file:/server-templates/
+    volumes:
+      - ${IDENRYA_CONFORMANCE_DIR}/templates/:/server-templates/:ro
+
+  oidcc-provider:
+    image: idenrya-oidcc-provider:local
+    build:
+      context: ${IDENRYA_CONFORMANCE_DIR}
+      dockerfile: Dockerfile.oidcc-provider
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: https://+:3000
+      Kestrel__Certificates__Default__Path: /https/oidcc-provider.pfx
+      Kestrel__Certificates__Default__Password: oidcc-provider
+      ConnectionStrings__DefaultConnection: Data Source=/data/idenrya.db
+      Conformance__Issuer: https://oidcc-provider:3000
+      Conformance__CallbackBaseUrl: https://nginx:8443/test/a/idenrya-basic
+      Conformance__ClientId: idenrya-basic-client
+      Conformance__ClientSecret: idenrya-basic-secret
+      Conformance__Client2Id: idenrya-basic-client-2
+      Conformance__Client2Secret: idenrya-basic-secret-2
+    volumes:
+      - ${IDENRYA_CERT_PATH}:/https/oidcc-provider.pfx:ro
+      - idenrya-data:/data
+    ports:
+      - "3000:3000"
+    entrypoint:
+      - dotnet
+      - Idenrya.Server.dll
+    command: []
+    depends_on:
+      - mongodb
+
+volumes:
+  idenrya-data:

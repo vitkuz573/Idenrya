@@ -1,0 +1,29 @@
+@model Idenrya.Server.Models.Account.LoginViewModel
+@{
+    ViewData["Title"] = "Sign-in";
+}
+
+<div class="row justify-content-center py-4">
+    <div class="col-md-6 col-lg-4">
+        <h1 class="h3 mb-3">Sign-in</h1>
+
+        <form asp-action="Login" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" asp-for="ReturnUrl" />
+
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+
+            <div class="mb-3">
+                <label asp-for="Login" class="form-label"></label>
+                <input asp-for="Login" class="form-control" name="login" autocomplete="username" />
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label"></label>
+                <input asp-for="Password" class="form-control" name="password" autocomplete="current-password" />
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 login-submit">Continue</button>
+        </form>
+    </div>
+</div>

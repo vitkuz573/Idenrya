@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>OIDF Conformance: Processing Implicit Callback</title>
+</head>
+<body>
+    <h1>Please wait...</h1>
+    <p id="complete" hidden>
+        The response has been sent to the server for processing.
+        You may return to <a href="">the test results page</a>.
+    </p>
+
+    <script type="text/javascript" th:inline="javascript">
+        var submitComplete = false;
+
+        function markComplete(returnUrl) {
+            if (submitComplete) {
+                return;
+            }
+
+            submitComplete = true;
+
+            var complete = document.getElementById("complete");
+            var link = complete.querySelector("a");
+            link.setAttribute("href", returnUrl);
+            complete.hidden = false;
+
+            if (!document.getElementById("submission_complete")) {
+                complete.insertAdjacentHTML("beforeend", "<span id=\"submission_complete\" hidden></span>");
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            var hash = window.location.hash;
+            var returnUrl = [[${returnUrl}]];
+            var submitUrl = [[${implicitSubmitUrl}]];
+            var timeoutId = setTimeout(function () { markComplete(returnUrl); }, 5000);
+
+            function submitHash(retryOnError) {
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", submitUrl, true);
+                xhr.setRequestHeader("Content-type", "text/plain");
+                xhr.onload = function () {
+                    clearTimeout(timeoutId);
+                    markComplete(returnUrl);
+                };
+                xhr.onerror = function () {
+                    if (!retryOnError) {
+                        return;
+                    }
+
+                    setTimeout(function () {
+                        submitHash(false);
+                    }, 1000);
+                };
+                xhr.send(hash);
+            }
+
+            submitHash(true);
+        });
+    </script>
+</body>
+</html>

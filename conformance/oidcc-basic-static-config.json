@@ -1,0 +1,300 @@
+{
+  "alias": "idenrya-basic",
+  "description": "Idenrya OIDC Core Basic (static client)",
+  "server": {
+    "discoveryUrl": "https://oidcc-provider:3000/.well-known/openid-configuration"
+  },
+  "client": {
+    "client_id": "idenrya-basic-client",
+    "client_secret": "idenrya-basic-secret"
+  },
+  "client_secret_post": {
+    "client_id": "idenrya-basic-client",
+    "client_secret": "idenrya-basic-secret"
+  },
+  "client2": {
+    "client_id": "idenrya-basic-client-2",
+    "client_secret": "idenrya-basic-secret-2"
+  },
+  "browser": [
+    {
+      "match": "https://oidcc-provider:3000/connect/authorize*",
+      "tasks": [
+        {
+          "task": "Login",
+          "optional": true,
+          "match": "https://oidcc-provider:3000/account/login*",
+          "commands": [
+            [
+              "text",
+              "name",
+              "login",
+              "foo",
+              "optional"
+            ],
+            [
+              "text",
+              "name",
+              "password",
+              "bar",
+              "optional"
+            ],
+            [
+              "click",
+              "class",
+              "login-submit"
+            ]
+          ]
+        },
+        {
+          "task": "Verify Complete",
+          "match": "*/test/*/callback*",
+          "commands": [
+            [
+              "wait",
+              "id",
+              "submission_complete",
+              10
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "override": {
+    "oidcc-prompt-login": {
+      "browser": [
+        {
+          "match": "https://oidcc-provider:3000/connect/authorize*",
+          "tasks": [
+            {
+              "task": "Login",
+              "optional": true,
+              "match": "https://oidcc-provider:3000/account/login*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Sign-in",
+                  "update-image-placeholder-optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "login",
+                  "foo",
+                  "optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "password",
+                  "bar",
+                  "optional"
+                ],
+                [
+                  "click",
+                  "class",
+                  "login-submit"
+                ]
+              ]
+            },
+            {
+              "task": "Verify Complete",
+              "match": "*/test/*/callback*",
+              "commands": [
+                [
+                  "wait",
+                  "id",
+                  "submission_complete",
+                  10
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-max-age-1": {
+      "browser": [
+        {
+          "match": "https://oidcc-provider:3000/connect/authorize*",
+          "tasks": [
+            {
+              "task": "Login",
+              "optional": true,
+              "match": "https://oidcc-provider:3000/account/login*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Sign-in",
+                  "update-image-placeholder-optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "login",
+                  "foo",
+                  "optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "password",
+                  "bar",
+                  "optional"
+                ],
+                [
+                  "click",
+                  "class",
+                  "login-submit"
+                ]
+              ]
+            },
+            {
+              "task": "Verify Complete",
+              "match": "*/test/*/callback*",
+              "commands": [
+                [
+                  "wait",
+                  "id",
+                  "submission_complete",
+                  10
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-ensure-registered-redirect-uri": {
+      "browser": [
+        {
+          "match": "https://oidcc-provider:3000/connect/authorize*",
+          "tasks": [
+            {
+              "task": "Expect redirect uri mismatch error page",
+              "match": "https://oidcc-provider:3000/connect/authorize*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "oops! something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-response-type-missing": {
+      "browser": [
+        {
+          "match": "https://oidcc-provider:3000/connect/authorize*",
+          "tasks": [
+            {
+              "task": "Expect missing response_type error page",
+              "match": "https://oidcc-provider:3000/connect/authorize*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "oops! something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-ensure-request-object-with-redirect-uri": {
+      "browser": [
+        {
+          "match": "https://oidcc-provider:3000/connect/authorize*",
+          "tasks": [
+            {
+              "task": "Expect redirect uri error page",
+              "match": "https://oidcc-provider:3000/connect/authorize*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "oops! something went wrong",
+                  "update-image-placeholder"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "oidcc-ui-locales": {
+      "browser": [
+        {
+          "match": "https://oidcc-provider:3000/connect/authorize*",
+          "tasks": [
+            {
+              "task": "Login",
+              "optional": true,
+              "match": "https://oidcc-provider:3000/account/login*",
+              "commands": [
+                [
+                  "wait",
+                  "xpath",
+                  "//*",
+                  10,
+                  "Sign-in",
+                  "update-image-placeholder-optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "login",
+                  "foo",
+                  "optional"
+                ],
+                [
+                  "text",
+                  "name",
+                  "password",
+                  "bar",
+                  "optional"
+                ],
+                [
+                  "click",
+                  "class",
+                  "login-submit"
+                ]
+              ]
+            },
+            {
+              "task": "Verify Complete",
+              "match": "*/test/*/callback*",
+              "commands": [
+                [
+                  "wait",
+                  "id",
+                  "submission_complete",
+                  20
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

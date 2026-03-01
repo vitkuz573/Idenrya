@@ -1,0 +1,16 @@
+@model Idenrya.Server.Models.ErrorViewModel
+@{
+    ViewData["Title"] = "Error";
+}
+
+<h1 class="text-danger">oops! something went wrong</h1>
+
+@if (!string.IsNullOrWhiteSpace(Model.Error))
+{
+    <p><strong>error:</strong> <code>@Model.Error</code></p>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorDescription))
+{
+    <p><strong>details:</strong> @Model.ErrorDescription</p>
+}
