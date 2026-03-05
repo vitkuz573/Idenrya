@@ -218,29 +218,6 @@
         }
       ]
     },
-    "oidcc-ensure-request-object-with-redirect-uri": {
-      "browser": [
-        {
-          "match": "https://oidcc-provider:3000/connect/authorize*",
-          "tasks": [
-            {
-              "task": "Expect redirect uri error page",
-              "match": "https://oidcc-provider:3000/connect/authorize*",
-              "commands": [
-                [
-                  "wait",
-                  "xpath",
-                  "//*",
-                  10,
-                  "oops! something went wrong",
-                  "update-image-placeholder"
-                ]
-              ]
-            }
-          ]
-        }
-      ]
-    },
     "oidcc-ui-locales": {
       "browser": [
         {

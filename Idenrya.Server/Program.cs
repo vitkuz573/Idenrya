@@ -6,9 +6,7 @@ using Idenrya.Server.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
-using OpenIddict.Server.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,6 +57,9 @@ builder.Services.AddOpenIddict()
         options.SetAuthorizationEndpointUris("/connect/authorize");
         options.SetTokenEndpointUris("/connect/token");
         options.SetUserInfoEndpointUris("/connect/userinfo");
+        options.SetIntrospectionEndpointUris("/connect/introspect");
+        options.SetRevocationEndpointUris("/connect/revocation");
+        options.SetEndSessionEndpointUris("/connect/logout");
 
         options.AllowAuthorizationCodeFlow();
         options.AllowRefreshTokenFlow();
@@ -78,6 +79,7 @@ builder.Services.AddOpenIddict()
             .EnableAuthorizationEndpointPassthrough()
             .EnableTokenEndpointPassthrough()
             .EnableUserInfoEndpointPassthrough()
+            .EnableEndSessionEndpointPassthrough()
             .EnableStatusCodePagesIntegration();
     })
     .AddValidation(options =>
@@ -158,7 +160,6 @@ app.Use(async (context, next) =>
     await output.CopyToAsync(originalBody);
 });
 
-// Handle request objects without modifying the conformance suite.
 app.Use(async (context, next) =>
 {
     if (!context.Request.Path.Equals("/connect/authorize", StringComparison.OrdinalIgnoreCase))
@@ -167,64 +168,130 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var hasRequestObject = context.Request.Query.ContainsKey(OpenIddictConstants.Parameters.Request) ||
-                           context.Request.Query.ContainsKey(OpenIddictConstants.Parameters.RequestUri);
-    if (!hasRequestObject)
+    var requestObject = await GetParameterAsync(context.Request, OpenIddictConstants.Parameters.Request);
+    var requestUri = await GetParameterAsync(context.Request, OpenIddictConstants.Parameters.RequestUri);
+    if (string.IsNullOrWhiteSpace(requestObject) && string.IsNullOrWhiteSpace(requestUri))
     {
         await next();
         return;
     }
 
-    var options = context.RequestServices.GetRequiredService<IOptions<ConformanceOptions>>().Value;
-    var redirectUri = context.Request.Query[OpenIddictConstants.Parameters.RedirectUri].ToString();
-    var knownRedirectUri = options.GetKnownRedirectUris().Contains(redirectUri, StringComparer.Ordinal);
+    var appManager = context.RequestServices.GetRequiredService<IOpenIddictApplicationManager>();
 
-    if (!knownRedirectUri)
+    if (!string.IsNullOrWhiteSpace(requestUri))
     {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        context.Response.ContentType = "text/html; charset=UTF-8";
-        await context.Response.WriteAsync(
-            """
-            <!doctype html>
-            <html lang="en">
-            <head><meta charset="utf-8"><title>Idenrya Error</title></head>
-            <body><h1>oops! something went wrong</h1></body>
-            </html>
-            """);
-        return;
-    }
-
-    if (context.Request.Query.ContainsKey(OpenIddictConstants.Parameters.RequestUri))
-    {
-        var location = QueryHelpers.AddQueryString(
-            redirectUri,
-            OpenIddictConstants.Parameters.Error,
+        var requestUriErrorLocation = await BuildAuthorizationErrorRedirectUriAsync(
+            context.Request,
+            appManager,
             OpenIddictConstants.Errors.RequestUriNotSupported);
+        if (!string.IsNullOrWhiteSpace(requestUriErrorLocation))
+        {
+            context.Response.Redirect(requestUriErrorLocation);
+            return;
+        }
 
-        context.Response.Redirect(location);
+        await next();
         return;
     }
 
-    if (!context.Request.Query.TryGetValue(OpenIddictConstants.Parameters.Request, out var requestObjects) ||
-        string.IsNullOrWhiteSpace(requestObjects))
+    if (string.IsNullOrWhiteSpace(requestObject))
     {
         await next();
         return;
     }
 
-    if (!TryExtractUnsignedRequestObjectParameters(requestObjects.ToString(), out var requestParameters))
+    if (!TryExtractUnsignedRequestObjectParameters(requestObject, out var requestParameters))
     {
-        var invalidRequestLocation = QueryHelpers.AddQueryString(
-            redirectUri,
-            OpenIddictConstants.Parameters.Error,
+        var invalidRequestObjectLocation = await BuildAuthorizationErrorRedirectUriAsync(
+            context.Request,
+            appManager,
             OpenIddictConstants.Errors.InvalidRequestObject);
+        if (!string.IsNullOrWhiteSpace(invalidRequestObjectLocation))
+        {
+            context.Response.Redirect(invalidRequestObjectLocation);
+            return;
+        }
 
-        context.Response.Redirect(invalidRequestLocation);
+        await next();
         return;
     }
 
+    var merged = await BuildMergedAuthorizationParametersAsync(context.Request, requestParameters);
+    var rewritten = QueryHelpers.AddQueryString($"{context.Request.PathBase}{context.Request.Path}", merged);
+    context.Response.Redirect(rewritten);
+});
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();
+
+static async Task<string?> GetParameterAsync(HttpRequest request, string name)
+{
+    var queryValue = request.Query[name].ToString();
+    if (!string.IsNullOrWhiteSpace(queryValue))
+    {
+        return queryValue;
+    }
+
+    if (!request.HasFormContentType)
+    {
+        return null;
+    }
+
+    var formValue = (await request.ReadFormAsync())[name].ToString();
+    return string.IsNullOrWhiteSpace(formValue) ? null : formValue;
+}
+
+static async Task<string?> BuildAuthorizationErrorRedirectUriAsync(
+    HttpRequest request,
+    IOpenIddictApplicationManager appManager,
+    string error)
+{
+    var clientId = await GetParameterAsync(request, OpenIddictConstants.Parameters.ClientId);
+    var redirectUri = await GetParameterAsync(request, OpenIddictConstants.Parameters.RedirectUri);
+    if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(redirectUri))
+    {
+        return null;
+    }
+
+    var application = await appManager.FindByClientIdAsync(clientId);
+    if (application is null)
+    {
+        return null;
+    }
+
+    var registeredRedirectUris = await appManager.GetRedirectUrisAsync(application);
+    if (!registeredRedirectUris.Contains(redirectUri, StringComparer.Ordinal))
+    {
+        return null;
+    }
+
+    var responseParameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+    {
+        [OpenIddictConstants.Parameters.Error] = error
+    };
+
+    var state = await GetParameterAsync(request, OpenIddictConstants.Parameters.State);
+    if (!string.IsNullOrWhiteSpace(state))
+    {
+        responseParameters[OpenIddictConstants.Parameters.State] = state;
+    }
+
+    return QueryHelpers.AddQueryString(redirectUri, responseParameters);
+}
+
+static async Task<List<KeyValuePair<string, string?>>> BuildMergedAuthorizationParametersAsync(
+    HttpRequest request,
+    IReadOnlyDictionary<string, string?> requestParameters)
+{
     var merged = new List<KeyValuePair<string, string?>>();
-    foreach (var pair in context.Request.Query)
+
+    foreach (var pair in request.Query)
     {
         if (pair.Key.Equals(OpenIddictConstants.Parameters.Request, StringComparison.Ordinal) ||
             pair.Key.Equals(OpenIddictConstants.Parameters.RequestUri, StringComparison.Ordinal))
@@ -238,25 +305,32 @@ app.Use(async (context, next) =>
         }
     }
 
+    if (request.HasFormContentType)
+    {
+        var form = await request.ReadFormAsync();
+        foreach (var pair in form)
+        {
+            if (pair.Key.Equals(OpenIddictConstants.Parameters.Request, StringComparison.Ordinal) ||
+                pair.Key.Equals(OpenIddictConstants.Parameters.RequestUri, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (var value in pair.Value)
+            {
+                merged.Add(new KeyValuePair<string, string?>(pair.Key, value));
+            }
+        }
+    }
+
     foreach (var parameter in requestParameters)
     {
         merged.RemoveAll(pair => pair.Key.Equals(parameter.Key, StringComparison.Ordinal));
         merged.Add(new KeyValuePair<string, string?>(parameter.Key, parameter.Value));
     }
 
-    var rewritten = QueryHelpers.AddQueryString($"{context.Request.PathBase}{context.Request.Path}", merged);
-    context.Response.Redirect(rewritten);
-    return;
-});
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
-
-app.Run();
+    return merged;
+}
 
 static bool TryExtractUnsignedRequestObjectParameters(
     string requestObject,

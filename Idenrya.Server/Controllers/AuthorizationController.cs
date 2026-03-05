@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
@@ -17,7 +18,9 @@ namespace Idenrya.Server.Controllers;
 [ApiExplorerSettings(IgnoreApi = true)]
 public sealed class AuthorizationController(
     UserManager<ApplicationUser> userManager,
-    SignInManager<ApplicationUser> signInManager) : Controller
+    SignInManager<ApplicationUser> signInManager,
+    IOpenIddictApplicationManager applicationManager,
+    IOpenIddictAuthorizationManager authorizationManager) : Controller
 {
     private const string AcrClaimType = "acr";
     private const string UserInfoNameRequestedClaimType = "idenrya_userinfo_name_requested";
@@ -73,6 +76,7 @@ public sealed class AuthorizationController(
 
         var authenticationTime = authentication.Properties?.IssuedUtc ?? DateTimeOffset.UtcNow;
         var principal = await CreatePrincipalAsync(user, request, authenticationTime);
+        await AttachPermanentAuthorizationAsync(principal, user, request);
 
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -137,7 +141,22 @@ public sealed class AuthorizationController(
             renewedPrincipal.SetClaim(UserInfoNameRequestedClaimType, "true");
         }
 
+        var authorizationId = principal.GetAuthorizationId();
+        if (!string.IsNullOrWhiteSpace(authorizationId))
+        {
+            renewedPrincipal.SetAuthorizationId(authorizationId);
+        }
+
         return SignIn(renewedPrincipal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    [HttpGet("~/connect/logout")]
+    [HttpPost("~/connect/logout")]
+    public async Task<IActionResult> Logout()
+    {
+        await signInManager.SignOutAsync();
+
+        return SignOut(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     [Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]
@@ -367,10 +386,66 @@ public sealed class AuthorizationController(
         }
 
         principal.SetScopes(request.GetScopes());
+
+        if (!string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            principal.SetPresenters(request.ClientId);
+        }
+
         principal.SetResources("userinfo");
         principal.SetDestinations(GetDestinations);
 
         return principal;
+    }
+
+    private async Task AttachPermanentAuthorizationAsync(
+        ClaimsPrincipal principal,
+        ApplicationUser user,
+        OpenIddictRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            return;
+        }
+
+        var application = await applicationManager.FindByClientIdAsync(request.ClientId);
+        if (application is null)
+        {
+            return;
+        }
+
+        var applicationId = await applicationManager.GetIdAsync(application);
+        if (string.IsNullOrWhiteSpace(applicationId))
+        {
+            return;
+        }
+
+        var scopes = principal.GetScopes().ToImmutableArray();
+        object? authorization = null;
+
+        await foreach (var candidate in authorizationManager.FindAsync(
+                           subject: user.Id,
+                           client: applicationId,
+                           status: OpenIddictConstants.Statuses.Valid,
+                           type: OpenIddictConstants.AuthorizationTypes.Permanent,
+                           scopes: scopes.Length > 0 ? scopes : null))
+        {
+            authorization = candidate;
+            break;
+        }
+
+        authorization ??= await authorizationManager.CreateAsync(
+            principal,
+            subject: user.Id,
+            client: applicationId,
+            type: OpenIddictConstants.AuthorizationTypes.Permanent,
+            scopes: scopes);
+
+        var authorizationId = await authorizationManager.GetIdAsync(authorization);
+        if (!string.IsNullOrWhiteSpace(authorizationId))
+        {
+            principal.SetAuthorizationId(authorizationId);
+        }
     }
 
     private static IEnumerable<string> GetDestinations(Claim claim)

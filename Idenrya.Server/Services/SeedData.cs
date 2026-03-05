@@ -210,6 +210,7 @@ public static class SeedData
 
         descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Authorization);
         descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Token);
+        descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Introspection);
         descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Revocation);
 
         descriptor.Permissions.Add(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode);

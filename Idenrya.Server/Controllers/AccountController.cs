@@ -6,9 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Idenrya.Server.Controllers;
 
-[AllowAnonymous]
 public sealed class AccountController(SignInManager<ApplicationUser> signInManager) : Controller
 {
+    [AllowAnonymous]
     [HttpGet("~/account/login")]
     public IActionResult Login(string? returnUrl = null)
     {
@@ -18,6 +18,7 @@ public sealed class AccountController(SignInManager<ApplicationUser> signInManag
         });
     }
 
+    [AllowAnonymous]
     [HttpPost("~/account/login")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(LoginViewModel model)
@@ -42,6 +43,21 @@ public sealed class AccountController(SignInManager<ApplicationUser> signInManag
         if (Url.IsLocalUrl(model.ReturnUrl))
         {
             return Redirect(model.ReturnUrl);
+        }
+
+        return Redirect("~/");
+    }
+
+    [Authorize]
+    [HttpPost("~/account/logout")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Logout(string? returnUrl = null)
+    {
+        await signInManager.SignOutAsync();
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return Redirect(returnUrl);
         }
 
         return Redirect("~/");
