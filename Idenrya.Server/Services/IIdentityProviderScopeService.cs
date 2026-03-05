@@ -2,7 +2,11 @@ namespace Idenrya.Server.Services;
 
 public interface IIdentityProviderScopeService
 {
-    IReadOnlyList<string> GetSupportedScopes();
+    Task<IReadOnlyList<string>> GetSupportedScopesAsync(CancellationToken cancellationToken = default);
 
-    IReadOnlyList<string> NormalizeClientScopes(IEnumerable<string> scopes);
+    Task<IReadOnlyList<string>> NormalizeClientScopesAsync(
+        IEnumerable<string> scopes,
+        CancellationToken cancellationToken = default);
+
+    Task UpsertSupportedScopesAsync(IEnumerable<string> scopes, CancellationToken cancellationToken = default);
 }

@@ -13,9 +13,9 @@ public sealed class ScopeManagementController(
     IIdentityProviderScopeService scopeService) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<IReadOnlyList<OpenIdScopeResponse>> List()
+    public async Task<ActionResult<IReadOnlyList<OpenIdScopeResponse>>> List(CancellationToken cancellationToken)
     {
-        var scopes = scopeService.GetSupportedScopes()
+        var scopes = (await scopeService.GetSupportedScopesAsync(cancellationToken))
             .OrderBy(static scope => scope, StringComparer.Ordinal)
             .Select(static scope => new OpenIdScopeResponse { Name = scope })
             .ToArray();

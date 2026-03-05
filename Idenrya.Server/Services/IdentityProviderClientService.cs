@@ -103,7 +103,7 @@ public sealed class IdentityProviderClientService(
         CancellationToken cancellationToken = default)
     {
         ValidateClientId(request.ClientId);
-        var normalizedScopes = scopeService.NormalizeClientScopes(request.Scopes);
+        var normalizedScopes = await scopeService.NormalizeClientScopesAsync(request.Scopes, cancellationToken);
         var normalized = NormalizeRequest(
             request.DisplayName,
             request.ClientSecret,
@@ -151,7 +151,7 @@ public sealed class IdentityProviderClientService(
         CancellationToken cancellationToken = default)
     {
         ValidateClientId(clientId);
-        var normalizedScopes = scopeService.NormalizeClientScopes(request.Scopes);
+        var normalizedScopes = await scopeService.NormalizeClientScopesAsync(request.Scopes, cancellationToken);
         var normalized = NormalizeRequest(
             request.DisplayName,
             request.ClientSecret,
@@ -252,7 +252,7 @@ public sealed class IdentityProviderClientService(
         CancellationToken cancellationToken = default)
     {
         ValidateClientId(options.ClientId);
-        var normalizedScopes = scopeService.NormalizeClientScopes(options.Scopes);
+        var normalizedScopes = await scopeService.NormalizeClientScopesAsync(options.Scopes, cancellationToken);
         var normalized = NormalizeRequest(
             options.DisplayName,
             options.ClientSecret,
