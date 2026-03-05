@@ -8,6 +8,7 @@ using Idenrya.Server.Services.OpenId;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 
@@ -24,6 +25,22 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(IdentityProviderOptions.SectionName));
         services.Configure<OpenIdProviderCompatibilityOptions>(
             configuration.GetSection(OpenIdProviderCompatibilityOptions.SectionName));
+        services.AddHttpClient();
+        services.AddHttpClient(nameof(RequestObjectByReferenceResolver))
+            .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+            {
+                var compatibilityOptions = serviceProvider
+                    .GetRequiredService<IOptions<OpenIdProviderCompatibilityOptions>>()
+                    .Value;
+
+                return compatibilityOptions.AllowUnsafeRequestUriTlsValidation
+                    ? new HttpClientHandler
+                    {
+                        ServerCertificateCustomValidationCallback =
+                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+                    }
+                    : new HttpClientHandler();
+            });
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
@@ -55,11 +72,16 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IHttpRequestParameterReader, HttpRequestParameterReader>();
         services.AddScoped<IRequestObjectParser, RequestObjectParser>();
+        services.AddScoped<IRequestObjectByReferenceResolver, RequestObjectByReferenceResolver>();
         services.AddScoped<IAuthorizationErrorRedirectUriBuilder, AuthorizationErrorRedirectUriBuilder>();
         services.AddScoped<IAuthorizationRequestParameterMerger, AuthorizationRequestParameterMerger>();
         services.AddScoped<IAuthorizationRequestObjectResolver, AuthorizationRequestObjectResolver>();
+        services.AddScoped<IClientRegistrationMetadataService, ClientRegistrationMetadataService>();
+        services.AddScoped<UnsignedIdTokenGenerationHandler>();
+        services.AddScoped<UnsignedIdTokenResponseHandler>();
         services.AddScoped<IIdentityProviderScopeService, IdentityProviderScopeService>();
         services.AddScoped<IIdentityProviderClientSecretAuditService, IdentityProviderClientSecretAuditService>();
+        services.AddScoped<IOpenIdDynamicClientRegistrationService, OpenIdDynamicClientRegistrationService>();
         services.AddScoped<IIdentityProviderClientService, IdentityProviderClientService>();
         services.AddScoped<IIdentityProviderUserService, IdentityProviderUserService>();
         services.AddScoped<IIdentityProviderRoleService, IdentityProviderRoleService>();
@@ -126,6 +148,18 @@ public static class ServiceCollectionExtensions
                         return default;
                     })
                     .SetOrder(OpenIddictServerHandlers.Protection.AttachTokenMetadata.Descriptor.Order + 500));
+
+                options.AddEventHandler<OpenIddictServerEvents.GenerateTokenContext>(builder => builder
+                    .UseScopedHandler<UnsignedIdTokenGenerationHandler>()
+                    .SetOrder(OpenIddictServerHandlers.Protection.AttachTokenMetadata.Descriptor.Order + 600));
+
+                options.AddEventHandler<OpenIddictServerEvents.GenerateTokenContext>(builder => builder
+                    .UseScopedHandler<UnsignedIdTokenGenerationHandler>()
+                    .SetOrder(OpenIddictServerHandlers.Protection.GenerateIdentityModelToken.Descriptor.Order + 100));
+
+                options.AddEventHandler<OpenIddictServerEvents.ApplyTokenResponseContext>(builder => builder
+                    .UseScopedHandler<UnsignedIdTokenResponseHandler>()
+                    .SetOrder(int.MaxValue - 1000));
             })
             .AddValidation(options =>
             {

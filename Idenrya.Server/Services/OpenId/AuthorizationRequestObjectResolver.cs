@@ -8,6 +8,7 @@ namespace Idenrya.Server.Services.OpenId;
 public sealed class AuthorizationRequestObjectResolver(
     IHttpRequestParameterReader parameterReader,
     IRequestObjectParser requestObjectParser,
+    IRequestObjectByReferenceResolver requestObjectByReferenceResolver,
     IAuthorizationErrorRedirectUriBuilder errorRedirectUriBuilder,
     IAuthorizationRequestParameterMerger parameterMerger,
     IOptions<OpenIdProviderCompatibilityOptions> compatibilityOptions) : IAuthorizationRequestObjectResolver
@@ -30,12 +31,38 @@ public sealed class AuthorizationRequestObjectResolver(
             return null;
         }
 
+        if (!string.IsNullOrWhiteSpace(requestObject) && !string.IsNullOrWhiteSpace(requestUri))
+        {
+            return await errorRedirectUriBuilder.BuildAsync(
+                request,
+                OpenIddictConstants.Errors.InvalidRequest,
+                cancellationToken);
+        }
+
         if (!string.IsNullOrWhiteSpace(requestUri) && compatibilityOptions.Value.RejectRequestUriParameter)
         {
             return await errorRedirectUriBuilder.BuildAsync(
                 request,
                 OpenIddictConstants.Errors.RequestUriNotSupported,
                 cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestUri))
+        {
+            var resolvedByReference = await requestObjectByReferenceResolver.ResolveAsync(
+                request,
+                requestUri,
+                cancellationToken);
+            if (!resolvedByReference.IsSuccess || resolvedByReference.Parameters is null)
+            {
+                return await errorRedirectUriBuilder.BuildAsync(
+                    request,
+                    resolvedByReference.Error ?? OpenIddictConstants.Errors.InvalidRequestUri,
+                    cancellationToken);
+            }
+
+            var mergedByReference = await parameterMerger.MergeAsync(request, resolvedByReference.Parameters, cancellationToken);
+            return QueryHelpers.AddQueryString($"{request.PathBase}{request.Path}", mergedByReference);
         }
 
         if (string.IsNullOrWhiteSpace(requestObject))

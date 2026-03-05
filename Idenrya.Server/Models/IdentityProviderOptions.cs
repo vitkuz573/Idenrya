@@ -19,6 +19,8 @@ public sealed class IdentityProviderOptions
     public IdentityProviderBootstrapOptions Bootstrap { get; set; } = new();
 
     public IdentityProviderCredentialsOptions Credentials { get; set; } = new();
+
+    public IdentityProviderDynamicClientRegistrationOptions DynamicClientRegistration { get; set; } = new();
 }
 
 public static class OpenIdScopeNames
@@ -45,6 +47,17 @@ public sealed class IdentityProviderCertificateOptions
     public string? Path { get; set; }
 
     public string? Password { get; set; }
+}
+
+public sealed class IdentityProviderDynamicClientRegistrationOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    public bool RequireInitialAccessToken { get; set; }
+
+    public List<string> InitialAccessTokens { get; set; } = [];
+
+    public bool AllowUnsignedIdTokens { get; set; }
 }
 
 public sealed class IdentityProviderBootstrapOptions

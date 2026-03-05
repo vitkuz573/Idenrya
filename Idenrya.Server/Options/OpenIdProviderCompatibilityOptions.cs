@@ -8,7 +8,15 @@ public sealed class OpenIdProviderCompatibilityOptions
 
     public bool RewriteDiscoveryScopesSupported { get; set; } = true;
 
+    public bool RewriteDiscoveryRegistrationEndpoint { get; set; } = true;
+
+    public bool RewriteDiscoveryRequestUriParameterSupported { get; set; } = true;
+
     public bool EnableRequestObjectParameterSupport { get; set; } = true;
 
     public bool RejectRequestUriParameter { get; set; } = true;
+
+    public int RequestUriFetchTimeoutSeconds { get; set; } = 10;
+
+    public bool AllowUnsafeRequestUriTlsValidation { get; set; }
 }

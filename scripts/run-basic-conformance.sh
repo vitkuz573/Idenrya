@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUITE_DIR="${SUITE_DIR:-/home/vitaly/openid-conformance-suite}"
 
-CONFIG_PATH="$ROOT_DIR/conformance/oidcc-basic-static-config.json"
+CONFIG_PATH="$ROOT_DIR/conformance/oidcc-basic-dynamic-config.json"
 OVERRIDE_PATH="$ROOT_DIR/conformance/conformance.override.yml"
 CERT_DIR="$ROOT_DIR/conformance/certs"
 CERT_PATH="$CERT_DIR/oidcc-provider.pfx"
@@ -102,7 +102,7 @@ if ! curl -kfsS "https://localhost:8443/api/runner/available" >/dev/null; then
   exit 1
 fi
 
-echo "Running OIDC Basic certification plan (static client)..."
+echo "Running OIDC Basic certification plan (dynamic client)..."
 (
   cd "$SUITE_DIR"
   CONFORMANCE_SERVER="https://localhost:8443/" \
@@ -111,7 +111,7 @@ echo "Running OIDC Basic certification plan (static client)..."
   python3 scripts/run-test-plan.py \
     --no-parallel \
     --export-dir "$RESULT_DIR" \
-    oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] \
+    oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] \
     "$CONFIG_PATH"
 )
 
