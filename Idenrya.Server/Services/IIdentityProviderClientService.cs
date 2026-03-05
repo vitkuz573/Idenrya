@@ -9,6 +9,10 @@ public interface IIdentityProviderClientService
 
     Task<OpenIdClientResponse?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default);
 
+    Task<OpenIdClientSecretMetadataResponse?> GetSecretMetadataAsync(
+        string clientId,
+        CancellationToken cancellationToken = default);
+
     Task<OpenIdClientResponse> CreateAsync(
         CreateOpenIdClientRequest request,
         CancellationToken cancellationToken = default);

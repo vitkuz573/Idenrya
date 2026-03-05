@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Idenrya.Server.Models;
 using Idenrya.Server.Models.Admin;
 using Microsoft.AspNetCore.WebUtilities;
@@ -10,6 +11,14 @@ public sealed class IdentityProviderClientService(
     IOpenIddictApplicationManager applicationManager,
     IIdentityProviderScopeService scopeService) : IIdentityProviderClientService
 {
+    private const string SecretLastRotatedAtUnixPropertyName = "idenrya.secret_last_rotated_at_unix";
+    private const string SecretRotationSourcePropertyName = "idenrya.secret_rotation_source";
+    private const string SecretRotationSourceCreate = "create";
+    private const string SecretRotationSourceUpdate = "update";
+    private const string SecretRotationSourceBootstrap = "bootstrap";
+    private const string SecretRotationSourceManual = "manual";
+    private const string SecretRotationSourceGenerated = "generated";
+
     public async Task<IReadOnlyList<OpenIdClientResponse>> ListAsync(CancellationToken cancellationToken = default)
     {
         var clients = new List<OpenIdClientResponse>();
@@ -38,6 +47,40 @@ public sealed class IdentityProviderClientService(
             : await BuildResponseAsync(application, cancellationToken);
     }
 
+    public async Task<OpenIdClientSecretMetadataResponse?> GetSecretMetadataAsync(
+        string clientId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateClientId(clientId);
+        var application = await applicationManager.FindByClientIdAsync(clientId, cancellationToken);
+        if (application is null)
+        {
+            return null;
+        }
+
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await applicationManager.PopulateAsync(descriptor, application, cancellationToken);
+
+        var hasClientSecret = string.Equals(
+            descriptor.ClientType,
+            OpenIddictConstants.ClientTypes.Confidential,
+            StringComparison.Ordinal);
+
+        var secretMetadata = ReadSecretMetadata(descriptor);
+        if (!hasClientSecret)
+        {
+            secretMetadata = default;
+        }
+
+        return new OpenIdClientSecretMetadataResponse
+        {
+            ClientId = descriptor.ClientId ?? clientId,
+            HasClientSecret = hasClientSecret,
+            SecretLastRotatedAtUtc = secretMetadata.RotatedAtUtc,
+            SecretRotationSource = secretMetadata.Source
+        };
+    }
+
     public async Task<OpenIdClientResponse> CreateAsync(
         CreateOpenIdClientRequest request,
         CancellationToken cancellationToken = default)
@@ -61,6 +104,11 @@ public sealed class IdentityProviderClientService(
         }
 
         var descriptor = BuildDescriptor(request.ClientId, normalized);
+        ApplySecretMetadata(
+            descriptor,
+            normalized.PublicClient,
+            DateTimeOffset.UtcNow,
+            SecretRotationSourceCreate);
         await applicationManager.CreateAsync(descriptor, cancellationToken);
 
         var created = await applicationManager.FindByClientIdAsync(request.ClientId, cancellationToken)
@@ -94,6 +142,11 @@ public sealed class IdentityProviderClientService(
         }
 
         var descriptor = BuildDescriptor(clientId, normalized);
+        ApplySecretMetadata(
+            descriptor,
+            normalized.PublicClient,
+            DateTimeOffset.UtcNow,
+            SecretRotationSourceUpdate);
         await applicationManager.UpdateAsync(existing, descriptor, cancellationToken);
 
         return await BuildResponseAsync(existing, cancellationToken);
@@ -133,9 +186,14 @@ public sealed class IdentityProviderClientService(
             throw new InvalidOperationException($"Client '{clientId}' is public and cannot have a client secret.");
         }
 
+        var rotatedAtUtc = DateTimeOffset.UtcNow;
+        var rotationSource = string.IsNullOrWhiteSpace(newClientSecret)
+            ? SecretRotationSourceGenerated
+            : SecretRotationSourceManual;
         var rotatedSecret = NormalizeRotatedSecret(newClientSecret);
         descriptor.ClientSecret = rotatedSecret;
         descriptor.ClientType = OpenIddictConstants.ClientTypes.Confidential;
+        ApplySecretMetadata(descriptor, publicClient: false, rotatedAtUtc, rotationSource);
 
         await applicationManager.UpdateAsync(existing, descriptor, cancellationToken);
 
@@ -143,7 +201,7 @@ public sealed class IdentityProviderClientService(
         {
             ClientId = descriptor.ClientId ?? clientId,
             ClientSecret = rotatedSecret,
-            RotatedAtUtc = DateTimeOffset.UtcNow
+            RotatedAtUtc = rotatedAtUtc
         };
     }
 
@@ -165,6 +223,11 @@ public sealed class IdentityProviderClientService(
 
         var existing = await applicationManager.FindByClientIdAsync(options.ClientId, cancellationToken);
         var descriptor = BuildDescriptor(options.ClientId, normalized);
+        ApplySecretMetadata(
+            descriptor,
+            normalized.PublicClient,
+            DateTimeOffset.UtcNow,
+            SecretRotationSourceBootstrap);
 
         if (existing is null)
         {
@@ -202,6 +265,57 @@ public sealed class IdentityProviderClientService(
     private static string GenerateClientSecret()
     {
         return WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(48));
+    }
+
+    private static void ApplySecretMetadata(
+        OpenIddictApplicationDescriptor descriptor,
+        bool publicClient,
+        DateTimeOffset rotatedAtUtc,
+        string source)
+    {
+        if (publicClient)
+        {
+            descriptor.Properties.Remove(SecretLastRotatedAtUnixPropertyName);
+            descriptor.Properties.Remove(SecretRotationSourcePropertyName);
+            return;
+        }
+
+        descriptor.Properties[SecretLastRotatedAtUnixPropertyName] =
+            JsonSerializer.SerializeToElement(rotatedAtUtc.ToUnixTimeSeconds());
+        descriptor.Properties[SecretRotationSourcePropertyName] =
+            JsonSerializer.SerializeToElement(source);
+    }
+
+    private static SecretMetadata ReadSecretMetadata(OpenIddictApplicationDescriptor descriptor)
+    {
+        DateTimeOffset? rotatedAtUtc = null;
+        string? source = null;
+
+        if (descriptor.Properties.TryGetValue(SecretLastRotatedAtUnixPropertyName, out var rotatedAtElement))
+        {
+            if (rotatedAtElement.ValueKind == JsonValueKind.Number &&
+                rotatedAtElement.TryGetInt64(out var unixTimestamp))
+            {
+                rotatedAtUtc = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp);
+            }
+            else if (rotatedAtElement.ValueKind == JsonValueKind.String &&
+                     long.TryParse(rotatedAtElement.GetString(), out unixTimestamp))
+            {
+                rotatedAtUtc = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp);
+            }
+        }
+
+        if (descriptor.Properties.TryGetValue(SecretRotationSourcePropertyName, out var sourceElement) &&
+            sourceElement.ValueKind == JsonValueKind.String)
+        {
+            source = sourceElement.GetString();
+        }
+
+        return new SecretMetadata
+        {
+            RotatedAtUtc = rotatedAtUtc,
+            Source = string.IsNullOrWhiteSpace(source) ? null : source
+        };
     }
 
     private static ClientConfiguration NormalizeRequest(
@@ -354,6 +468,16 @@ public sealed class IdentityProviderClientService(
             .OrderBy(static scope => scope, StringComparer.Ordinal)
             .ToList();
 
+        var hasClientSecret = string.Equals(
+            descriptor.ClientType,
+            OpenIddictConstants.ClientTypes.Confidential,
+            StringComparison.Ordinal);
+        var secretMetadata = ReadSecretMetadata(descriptor);
+        if (!hasClientSecret)
+        {
+            secretMetadata = default;
+        }
+
         return new OpenIdClientResponse
         {
             Id = await applicationManager.GetIdAsync(application, cancellationToken) ?? string.Empty,
@@ -364,6 +488,9 @@ public sealed class IdentityProviderClientService(
             RequirePkce = descriptor.Requirements.Contains(
                 OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
                 StringComparer.Ordinal),
+            HasClientSecret = hasClientSecret,
+            SecretLastRotatedAtUtc = secretMetadata.RotatedAtUtc,
+            SecretRotationSource = secretMetadata.Source,
             RedirectUris = descriptor.RedirectUris
                 .Select(static uri => uri.AbsoluteUri)
                 .OrderBy(static uri => uri, StringComparer.Ordinal)
@@ -393,5 +520,12 @@ public sealed class IdentityProviderClientService(
         public bool RequirePkce { get; init; }
 
         public string ConsentType { get; init; } = OpenIddictConstants.ConsentTypes.Explicit;
+    }
+
+    private readonly struct SecretMetadata
+    {
+        public DateTimeOffset? RotatedAtUtc { get; init; }
+
+        public string? Source { get; init; }
     }
 }

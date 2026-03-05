@@ -61,6 +61,12 @@ public sealed class OpenIdClientResponse
 
     public bool RequirePkce { get; set; }
 
+    public bool HasClientSecret { get; set; }
+
+    public DateTimeOffset? SecretLastRotatedAtUtc { get; set; }
+
+    public string? SecretRotationSource { get; set; }
+
     public List<string> RedirectUris { get; set; } = [];
 
     public List<string> PostLogoutRedirectUris { get; set; } = [];
@@ -80,4 +86,15 @@ public sealed class RotateOpenIdClientSecretResponse
     public string ClientSecret { get; set; } = string.Empty;
 
     public DateTimeOffset RotatedAtUtc { get; set; }
+}
+
+public sealed class OpenIdClientSecretMetadataResponse
+{
+    public string ClientId { get; set; } = string.Empty;
+
+    public bool HasClientSecret { get; set; }
+
+    public DateTimeOffset? SecretLastRotatedAtUtc { get; set; }
+
+    public string? SecretRotationSource { get; set; }
 }

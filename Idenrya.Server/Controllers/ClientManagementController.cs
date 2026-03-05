@@ -27,6 +27,23 @@ public sealed class ClientManagementController(
         return client is null ? NotFound() : Ok(client);
     }
 
+    [HttpGet("{clientId}/secret-metadata")]
+    public async Task<ActionResult<OpenIdClientSecretMetadataResponse>> GetSecretMetadata(
+        string clientId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var metadata = await clientService.GetSecretMetadataAsync(clientId, cancellationToken);
+            return metadata is null ? NotFound() : Ok(metadata);
+        }
+        catch (ArgumentException exception)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            return ValidationProblem(ModelState);
+        }
+    }
+
     [HttpPost]
     public async Task<ActionResult<OpenIdClientResponse>> Create(
         [FromBody] CreateOpenIdClientRequest request,
