@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
 using Idenrya.Server.Data;
 using Idenrya.Server.Models;
 using Idenrya.Server.Options;
@@ -16,7 +17,8 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddIdenryaIdentityProvider(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHostEnvironment hostEnvironment)
     {
         services.Configure<IdentityProviderOptions>(
             configuration.GetSection(IdentityProviderOptions.SectionName));
@@ -49,7 +51,7 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddControllersWithViews();
-        services.AddOpenIddictServer(configuration);
+        services.AddOpenIddictServer(configuration, hostEnvironment);
 
         services.AddScoped<IHttpRequestParameterReader, HttpRequestParameterReader>();
         services.AddScoped<IRequestObjectParser, RequestObjectParser>();
@@ -61,8 +63,15 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static void AddOpenIddictServer(this IServiceCollection services, IConfiguration configuration)
+    private static void AddOpenIddictServer(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment hostEnvironment)
     {
+        var identityProviderOptions =
+            configuration.GetSection(IdentityProviderOptions.SectionName).Get<IdentityProviderOptions>()
+            ?? new IdentityProviderOptions();
+
         services.AddOpenIddict()
             .AddCore(options =>
             {
@@ -95,8 +104,7 @@ public static class ServiceCollectionExtensions
                     OpenIddictConstants.Scopes.Phone,
                     OpenIddictConstants.Scopes.OfflineAccess);
 
-                options.AddDevelopmentEncryptionCertificate();
-                options.AddDevelopmentSigningCertificate();
+                ConfigureServerCredentials(options, identityProviderOptions.Credentials, hostEnvironment.ContentRootPath);
 
                 options.UseAspNetCore()
                     .EnableAuthorizationEndpointPassthrough()
@@ -124,6 +132,84 @@ public static class ServiceCollectionExtensions
                 options.UseLocalServer();
                 options.UseAspNetCore();
             });
+    }
+
+    private static void ConfigureServerCredentials(
+        OpenIddictServerBuilder options,
+        IdentityProviderCredentialsOptions credentials,
+        string contentRootPath)
+    {
+        var signingCertificate = TryLoadCertificate(credentials.SigningCertificate, contentRootPath);
+        var encryptionCertificate = TryLoadCertificate(credentials.EncryptionCertificate, contentRootPath);
+
+        if (signingCertificate is not null)
+        {
+            options.AddSigningCertificate(signingCertificate);
+        }
+
+        if (encryptionCertificate is not null)
+        {
+            options.AddEncryptionCertificate(encryptionCertificate);
+        }
+
+        if (signingCertificate is not null && encryptionCertificate is not null)
+        {
+            return;
+        }
+
+        if (!credentials.AllowDevelopmentCertificates)
+        {
+            throw new InvalidOperationException(
+                "IdentityProvider credentials are not configured. Set both signing and encryption certificates " +
+                "or enable IdentityProvider:Credentials:AllowDevelopmentCertificates for non-production usage.");
+        }
+
+        if (signingCertificate is null)
+        {
+            options.AddDevelopmentSigningCertificate();
+        }
+
+        if (encryptionCertificate is null)
+        {
+            options.AddDevelopmentEncryptionCertificate();
+        }
+    }
+
+    private static X509Certificate2? TryLoadCertificate(
+        IdentityProviderCertificateOptions certificateOptions,
+        string contentRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(certificateOptions.Path))
+        {
+            return null;
+        }
+
+        var path = certificateOptions.Path!;
+        if (!Path.IsPathRooted(path))
+        {
+            path = Path.Combine(contentRootPath, path);
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException($"Certificate file not found: '{path}'.");
+        }
+
+        var storageFlags = X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable;
+        var extension = Path.GetExtension(path);
+
+        if (string.Equals(extension, ".pfx", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, ".p12", StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrWhiteSpace(certificateOptions.Password))
+        {
+            return X509CertificateLoader.LoadPkcs12FromFile(
+                path,
+                certificateOptions.Password ?? string.Empty,
+                storageFlags,
+                Pkcs12LoaderLimits.Defaults);
+        }
+
+        return X509CertificateLoader.LoadCertificateFromFile(path);
     }
 
     private static void RemoveOpenIddictPrivateClaims(ClaimsPrincipal principal)

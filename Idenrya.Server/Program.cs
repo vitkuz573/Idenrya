@@ -2,7 +2,7 @@ using Idenrya.Server.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddIdenryaIdentityProvider(builder.Configuration);
+builder.Services.AddIdenryaIdentityProvider(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 

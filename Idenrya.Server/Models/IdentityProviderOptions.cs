@@ -7,6 +7,24 @@ public sealed class IdentityProviderOptions
     public string? Issuer { get; set; }
 
     public IdentityProviderBootstrapOptions Bootstrap { get; set; } = new();
+
+    public IdentityProviderCredentialsOptions Credentials { get; set; } = new();
+}
+
+public sealed class IdentityProviderCredentialsOptions
+{
+    public bool AllowDevelopmentCertificates { get; set; }
+
+    public IdentityProviderCertificateOptions SigningCertificate { get; set; } = new();
+
+    public IdentityProviderCertificateOptions EncryptionCertificate { get; set; } = new();
+}
+
+public sealed class IdentityProviderCertificateOptions
+{
+    public string? Path { get; set; }
+
+    public string? Password { get; set; }
 }
 
 public sealed class IdentityProviderBootstrapOptions
