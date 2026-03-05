@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Idenrya.Server.Options;
+using Idenrya.Server.Services;
 using Microsoft.Extensions.Options;
 
 namespace Idenrya.Server.Middleware;
@@ -8,10 +9,15 @@ public sealed class DiscoveryDocumentCompatibilityMiddleware(RequestDelegate nex
 {
     private const string DiscoveryEndpointPath = "/.well-known/openid-configuration";
 
-    public async Task InvokeAsync(HttpContext context, IOptions<OpenIdProviderCompatibilityOptions> options)
+    public async Task InvokeAsync(
+        HttpContext context,
+        IOptions<OpenIdProviderCompatibilityOptions> options,
+        IIdentityProviderScopeService scopeService)
     {
-        if (!options.Value.RewriteDiscoveryRequestParameterSupported ||
-            !context.Request.Path.Equals(DiscoveryEndpointPath, StringComparison.OrdinalIgnoreCase))
+        var compatibilityOptions = options.Value;
+        if (!context.Request.Path.Equals(DiscoveryEndpointPath, StringComparison.OrdinalIgnoreCase) ||
+            (!compatibilityOptions.RewriteDiscoveryRequestParameterSupported &&
+             !compatibilityOptions.RewriteDiscoveryScopesSupported))
         {
             await next(context);
             return;
@@ -36,27 +42,48 @@ public sealed class DiscoveryDocumentCompatibilityMiddleware(RequestDelegate nex
             try
             {
                 using var document = await JsonDocument.ParseAsync(buffer, cancellationToken: context.RequestAborted);
+                var supportedScopes = compatibilityOptions.RewriteDiscoveryScopesSupported
+                    ? await scopeService.GetSupportedScopesAsync(context.RequestAborted)
+                    : [];
+
                 await using var output = new MemoryStream();
                 await using (var writer = new Utf8JsonWriter(output))
                 {
                     writer.WriteStartObject();
 
-                    var replaced = false;
+                    var replacedRequestParameterSupported = false;
+                    var replacedScopesSupported = false;
+
                     foreach (var property in document.RootElement.EnumerateObject())
                     {
-                        if (property.NameEquals("request_parameter_supported"))
+                        if (compatibilityOptions.RewriteDiscoveryRequestParameterSupported &&
+                            property.NameEquals("request_parameter_supported"))
                         {
                             writer.WriteBoolean("request_parameter_supported", true);
-                            replaced = true;
+                            replacedRequestParameterSupported = true;
+                            continue;
+                        }
+
+                        if (compatibilityOptions.RewriteDiscoveryScopesSupported &&
+                            property.NameEquals("scopes_supported"))
+                        {
+                            WriteScopesSupported(writer, supportedScopes);
+                            replacedScopesSupported = true;
                             continue;
                         }
 
                         property.WriteTo(writer);
                     }
 
-                    if (!replaced)
+                    if (compatibilityOptions.RewriteDiscoveryRequestParameterSupported &&
+                        !replacedRequestParameterSupported)
                     {
                         writer.WriteBoolean("request_parameter_supported", true);
+                    }
+
+                    if (compatibilityOptions.RewriteDiscoveryScopesSupported && !replacedScopesSupported)
+                    {
+                        WriteScopesSupported(writer, supportedScopes);
                     }
 
                     writer.WriteEndObject();
@@ -83,5 +110,17 @@ public sealed class DiscoveryDocumentCompatibilityMiddleware(RequestDelegate nex
         return response.StatusCode == StatusCodes.Status200OK &&
                response.ContentType is not null &&
                response.ContentType.Contains("application/json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void WriteScopesSupported(Utf8JsonWriter writer, IReadOnlyList<string> supportedScopes)
+    {
+        writer.WritePropertyName("scopes_supported");
+        writer.WriteStartArray();
+        foreach (var scope in supportedScopes)
+        {
+            writer.WriteStringValue(scope);
+        }
+
+        writer.WriteEndArray();
     }
 }

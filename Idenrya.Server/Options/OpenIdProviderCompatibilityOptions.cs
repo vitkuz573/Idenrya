@@ -6,6 +6,8 @@ public sealed class OpenIdProviderCompatibilityOptions
 
     public bool RewriteDiscoveryRequestParameterSupported { get; set; } = true;
 
+    public bool RewriteDiscoveryScopesSupported { get; set; } = true;
+
     public bool EnableRequestObjectParameterSupport { get; set; } = true;
 
     public bool RejectRequestUriParameter { get; set; } = true;
