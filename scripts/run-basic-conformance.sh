@@ -5,7 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUITE_DIR="${SUITE_DIR:-/home/vitaly/openid-conformance-suite}"
 
 CONFIG_PATH="$ROOT_DIR/conformance/oidcc-basic-static-config.json"
-EXPECTED_FAILURES_PATH="$ROOT_DIR/conformance/expected-failures-basic.json"
 OVERRIDE_PATH="$ROOT_DIR/conformance/conformance.override.yml"
 CERT_DIR="$ROOT_DIR/conformance/certs"
 CERT_PATH="$CERT_DIR/oidcc-provider.pfx"
@@ -55,7 +54,7 @@ if [[ ! -f "$SUITE_DIR/target/fapi-test-suite.jar" ]]; then
   echo "Building OpenID conformance suite (first run)..."
   (
     cd "$SUITE_DIR"
-    mvn -DskipTests package
+    mvn package
   )
 fi
 
@@ -111,7 +110,6 @@ echo "Running OIDC Basic certification plan (static client)..."
   CONFORMANCE_DEV_MODE=1 \
   python3 scripts/run-test-plan.py \
     --no-parallel \
-    --expected-failures-file "$EXPECTED_FAILURES_PATH" \
     --export-dir "$RESULT_DIR" \
     oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] \
     "$CONFIG_PATH"

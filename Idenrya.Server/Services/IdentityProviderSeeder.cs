@@ -6,7 +6,11 @@ using OpenIddict.Abstractions;
 
 namespace Idenrya.Server.Services;
 
-public static class SeedData
+public sealed class IdentityProviderSeeder(
+    IOptions<IdentityProviderOptions> options,
+    UserManager<ApplicationUser> userManager,
+    IOpenIddictApplicationManager appManager,
+    ILogger<IdentityProviderSeeder> logger) : IIdentityProviderSeeder
 {
     private static readonly string[] ManagedProfileClaimTypes =
     [
@@ -26,32 +30,30 @@ public static class SeedData
         OpenIddictConstants.Claims.UpdatedAt
     ];
 
-    public static async Task InitializeAsync(IServiceProvider services)
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        var options = services.GetRequiredService<IOptions<ConformanceOptions>>().Value;
-        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        var appManager = services.GetRequiredService<IOpenIddictApplicationManager>();
-
-        foreach (var user in options.GetSeedUsers())
+        var bootstrap = options.Value.Bootstrap;
+        if (!bootstrap.Enabled)
         {
-            await EnsureSeedUserAsync(userManager, user);
+            logger.LogInformation("Identity bootstrap is disabled.");
+            return;
         }
 
-        foreach (var client in options.GetSeedClients())
+        foreach (var user in bootstrap.Users.Where(static user => !string.IsNullOrWhiteSpace(user.UserName)))
         {
-            await EnsureSeedClientAsync(appManager, client);
+            cancellationToken.ThrowIfCancellationRequested();
+            await EnsureSeedUserAsync(user);
+        }
+
+        foreach (var client in bootstrap.Clients.Where(static client => !string.IsNullOrWhiteSpace(client.ClientId)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await EnsureSeedClientAsync(client);
         }
     }
 
-    private static async Task EnsureSeedUserAsync(
-        UserManager<ApplicationUser> userManager,
-        ConformanceUserOptions userOptions)
+    private async Task EnsureSeedUserAsync(IdentityProviderUserOptions userOptions)
     {
-        if (string.IsNullOrWhiteSpace(userOptions.UserName))
-        {
-            throw new InvalidOperationException("Seed user username must be provided.");
-        }
-
         if (string.IsNullOrWhiteSpace(userOptions.Password))
         {
             throw new InvalidOperationException($"Seed user '{userOptions.UserName}' password must be provided.");
@@ -74,7 +76,7 @@ public static class SeedData
                     $"Failed to create seed user '{userOptions.UserName}': {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
             }
 
-            await EnsureManagedClaimsAsync(userManager, user, userOptions);
+            await EnsureManagedClaimsAsync(user, userOptions);
             return;
         }
 
@@ -99,13 +101,12 @@ public static class SeedData
             }
         }
 
-        await EnsureManagedClaimsAsync(userManager, user, userOptions);
+        await EnsureManagedClaimsAsync(user, userOptions);
     }
 
-    private static async Task EnsureManagedClaimsAsync(
-        UserManager<ApplicationUser> userManager,
+    private async Task EnsureManagedClaimsAsync(
         ApplicationUser user,
-        ConformanceUserOptions userOptions)
+        IdentityProviderUserOptions userOptions)
     {
         var desiredClaims = BuildManagedClaims(userOptions);
 
@@ -148,7 +149,7 @@ public static class SeedData
         }
     }
 
-    private static Dictionary<string, string?> BuildManagedClaims(ConformanceUserOptions userOptions)
+    private static Dictionary<string, string?> BuildManagedClaims(IdentityProviderUserOptions userOptions)
     {
         var claims = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -166,7 +167,7 @@ public static class SeedData
         return claims;
     }
 
-    private static void ApplyUserProfile(ApplicationUser user, ConformanceUserOptions options)
+    private static void ApplyUserProfile(ApplicationUser user, IdentityProviderUserOptions options)
     {
         user.Email = options.Email;
         user.EmailConfirmed = options.EmailConfirmed;
@@ -177,15 +178,8 @@ public static class SeedData
         user.Address = options.Address;
     }
 
-    private static async Task EnsureSeedClientAsync(
-        IOpenIddictApplicationManager appManager,
-        ConformanceClientOptions clientOptions)
+    private async Task EnsureSeedClientAsync(IdentityProviderClientOptions clientOptions)
     {
-        if (string.IsNullOrWhiteSpace(clientOptions.ClientId))
-        {
-            throw new InvalidOperationException("Seed client id must be provided.");
-        }
-
         if (clientOptions.RedirectUris.Count == 0)
         {
             throw new InvalidOperationException($"Seed client '{clientOptions.ClientId}' must have at least one redirect URI.");
@@ -203,7 +197,7 @@ public static class SeedData
             ConsentType = OpenIddictConstants.ConsentTypes.Implicit
         };
 
-        foreach (var redirectUri in clientOptions.RedirectUris)
+        foreach (var redirectUri in clientOptions.RedirectUris.Where(static uri => !string.IsNullOrWhiteSpace(uri)))
         {
             descriptor.RedirectUris.Add(new Uri(redirectUri));
         }

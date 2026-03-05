@@ -1,10 +1,14 @@
+using System.Security.Claims;
 using Idenrya.Server.Data;
 using Idenrya.Server.Models;
 using Idenrya.Server.Options;
+using Idenrya.Server.Services;
 using Idenrya.Server.Services.OpenId;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
+using OpenIddict.Server;
 
 namespace Idenrya.Server.Extensions;
 
@@ -14,8 +18,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<ConformanceOptions>(
-            configuration.GetSection(ConformanceOptions.SectionName));
+        services.Configure<IdentityProviderOptions>(
+            configuration.GetSection(IdentityProviderOptions.SectionName));
         services.Configure<OpenIdProviderCompatibilityOptions>(
             configuration.GetSection(OpenIdProviderCompatibilityOptions.SectionName));
 
@@ -52,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthorizationErrorRedirectUriBuilder, AuthorizationErrorRedirectUriBuilder>();
         services.AddScoped<IAuthorizationRequestParameterMerger, AuthorizationRequestParameterMerger>();
         services.AddScoped<IAuthorizationRequestObjectResolver, AuthorizationRequestObjectResolver>();
+        services.AddScoped<IIdentityProviderSeeder, IdentityProviderSeeder>();
 
         return services;
     }
@@ -66,7 +71,7 @@ public static class ServiceCollectionExtensions
             })
             .AddServer(options =>
             {
-                var issuer = configuration[$"{ConformanceOptions.SectionName}:Issuer"];
+                var issuer = configuration[$"{IdentityProviderOptions.SectionName}:Issuer"];
                 if (!string.IsNullOrWhiteSpace(issuer))
                 {
                     options.SetIssuer(new Uri(issuer));
@@ -99,11 +104,76 @@ public static class ServiceCollectionExtensions
                     .EnableUserInfoEndpointPassthrough()
                     .EnableEndSessionEndpointPassthrough()
                     .EnableStatusCodePagesIntegration();
+
+                options.AddEventHandler<OpenIddictServerEvents.GenerateTokenContext>(builder => builder
+                    .UseInlineHandler(static context =>
+                    {
+                        if (context.Principal is null || !IsIdentityToken(context.TokenType))
+                        {
+                            return default;
+                        }
+
+                        RemoveOpenIddictPrivateClaims(context.Principal);
+                        RemoveOpenIddictPrivateClaims(context.SecurityTokenDescriptor);
+                        return default;
+                    })
+                    .SetOrder(OpenIddictServerHandlers.Protection.AttachTokenMetadata.Descriptor.Order + 500));
             })
             .AddValidation(options =>
             {
                 options.UseLocalServer();
                 options.UseAspNetCore();
             });
+    }
+
+    private static void RemoveOpenIddictPrivateClaims(ClaimsPrincipal principal)
+    {
+        foreach (var identity in principal.Identities)
+        {
+            var claims = identity.Claims
+                .Where(static claim => claim.Type.StartsWith("oi_", StringComparison.Ordinal))
+                .ToArray();
+
+            foreach (var claim in claims)
+            {
+                identity.RemoveClaim(claim);
+            }
+        }
+    }
+
+    private static void RemoveOpenIddictPrivateClaims(SecurityTokenDescriptor descriptor)
+    {
+        if (descriptor.Subject is not null)
+        {
+            var subjectClaims = descriptor.Subject.Claims
+                .Where(static claim => claim.Type.StartsWith("oi_", StringComparison.Ordinal))
+                .ToArray();
+
+            foreach (var claim in subjectClaims)
+            {
+                descriptor.Subject.RemoveClaim(claim);
+            }
+        }
+
+        if (descriptor.Claims is null || descriptor.Claims.Count == 0)
+        {
+            return;
+        }
+
+        var privateClaimKeys = descriptor.Claims.Keys
+            .Where(static key => key.StartsWith("oi_", StringComparison.Ordinal))
+            .ToArray();
+
+        foreach (var key in privateClaimKeys)
+        {
+            descriptor.Claims.Remove(key);
+        }
+    }
+
+    private static bool IsIdentityToken(string? tokenType)
+    {
+        return string.Equals(tokenType, OpenIddictConstants.TokenTypeIdentifiers.IdentityToken, StringComparison.Ordinal) ||
+               string.Equals(tokenType, OpenIddictConstants.Parameters.IdToken, StringComparison.Ordinal) ||
+               string.Equals(tokenType, OpenIddictConstants.ResponseTypes.IdToken, StringComparison.Ordinal);
     }
 }

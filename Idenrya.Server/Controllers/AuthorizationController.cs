@@ -147,6 +147,8 @@ public sealed class AuthorizationController(
             renewedPrincipal.SetAuthorizationId(authorizationId);
         }
 
+        renewedPrincipal.SetDestinations(GetDestinations);
+
         return SignIn(renewedPrincipal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 

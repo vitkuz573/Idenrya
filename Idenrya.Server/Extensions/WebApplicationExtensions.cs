@@ -19,6 +19,7 @@ public static class WebApplicationExtensions
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await db.Database.EnsureCreatedAsync();
-        await SeedData.InitializeAsync(scope.ServiceProvider);
+        var seeder = scope.ServiceProvider.GetRequiredService<IIdentityProviderSeeder>();
+        await seeder.SeedAsync();
     }
 }
