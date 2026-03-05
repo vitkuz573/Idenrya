@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUITE_DIR="${SUITE_DIR:-/home/vitaly/openid-conformance-suite}"
 
-CONFIG_PATH="$ROOT_DIR/conformance/oidcc-basic-dynamic-config.json"
+DISCOVERY_CONFIG_PATH="${DISCOVERY_CONFIG_PATH:-$ROOT_DIR/conformance/oidcc-basic-discovery-config.json}"
+STATIC_CONFIG_PATH="${STATIC_CONFIG_PATH:-$ROOT_DIR/conformance/oidcc-basic-static-config.json}"
 OVERRIDE_PATH="$ROOT_DIR/conformance/conformance.override.yml"
 CERT_DIR="$ROOT_DIR/conformance/certs"
 CERT_PATH="$CERT_DIR/oidcc-provider.pfx"
@@ -102,17 +103,50 @@ if ! curl -kfsS "https://localhost:8443/api/runner/available" >/dev/null; then
   exit 1
 fi
 
-echo "Running OIDC Basic certification plan (dynamic client)..."
+echo "Waiting for oidcc-provider discovery endpoint..."
+for _ in $(seq 1 120); do
+  if curl -kfsS "https://localhost:3000/.well-known/openid-configuration" >/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
+if ! curl -kfsS "https://localhost:3000/.well-known/openid-configuration" >/dev/null; then
+  echo "OIDC provider did not become ready in time." >&2
+  docker logs --tail 200 openid-conformance-suite-oidcc-provider-1 || true
+  exit 1
+fi
+
+echo "Running OIDC Basic certification plan (all server_metadata/client_registration variants)..."
 (
   cd "$SUITE_DIR"
-  CONFORMANCE_SERVER="https://localhost:8443/" \
-  CONFORMANCE_SERVER_MTLS="https://localhost:8444/" \
-  CONFORMANCE_DEV_MODE=1 \
-  python3 scripts/run-test-plan.py \
-    --no-parallel \
-    --export-dir "$RESULT_DIR" \
-    oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] \
-    "$CONFIG_PATH"
+
+  variants=(
+    "discovery:dynamic_client"
+    "discovery:static_client"
+    "static:dynamic_client"
+    "static:static_client"
+  )
+
+  for variant in "${variants[@]}"; do
+    server_metadata="${variant%%:*}"
+    client_registration="${variant##*:}"
+    test_plan="oidcc-basic-certification-test-plan[server_metadata=${server_metadata}][client_registration=${client_registration}]"
+    config_path="$DISCOVERY_CONFIG_PATH"
+    if [[ "$server_metadata" == "static" ]]; then
+      config_path="$STATIC_CONFIG_PATH"
+    fi
+
+    echo "Running variant: server_metadata=${server_metadata}, client_registration=${client_registration}, config=${config_path}"
+    CONFORMANCE_SERVER="https://localhost:8443/" \
+    CONFORMANCE_SERVER_MTLS="https://localhost:8444/" \
+    CONFORMANCE_DEV_MODE=1 \
+    python3 scripts/run-test-plan.py \
+      --no-parallel \
+      --export-dir "$RESULT_DIR" \
+      "$test_plan" \
+      "$config_path"
+  done
 )
 
 echo "Conformance run finished successfully."

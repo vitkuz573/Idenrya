@@ -2,6 +2,7 @@
   "alias": "idenrya-basic",
   "description": "Idenrya OIDC Core Basic (all variants)",
   "server": {
+    "discoveryUrl": "https://oidcc-provider:3000/.well-known/openid-configuration",
     "issuer": "https://oidcc-provider:3000/",
     "authorization_endpoint": "https://oidcc-provider:3000/connect/authorize",
     "token_endpoint": "https://oidcc-provider:3000/connect/token",
