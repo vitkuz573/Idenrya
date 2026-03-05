@@ -4,9 +4,9 @@ namespace Idenrya.Server.Models;
 
 public sealed class ApplicationUser : IdentityUser
 {
-    public string GivenName { get; set; } = "Conformance";
+    public string GivenName { get; set; } = string.Empty;
 
-    public string FamilyName { get; set; } = "User";
+    public string FamilyName { get; set; } = string.Empty;
 
-    public string Address { get; set; } = "123 Test Street, Test City";
+    public string Address { get; set; } = string.Empty;
 }
