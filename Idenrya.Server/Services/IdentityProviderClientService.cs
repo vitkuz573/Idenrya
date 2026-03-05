@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using Idenrya.Server.Models;
 using Idenrya.Server.Models.Admin;
+using Microsoft.AspNetCore.WebUtilities;
 using OpenIddict.Abstractions;
 
 namespace Idenrya.Server.Services;
@@ -110,6 +112,41 @@ public sealed class IdentityProviderClientService(
         return true;
     }
 
+    public async Task<RotateOpenIdClientSecretResponse?> RotateSecretAsync(
+        string clientId,
+        string? newClientSecret,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateClientId(clientId);
+
+        var existing = await applicationManager.FindByClientIdAsync(clientId, cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await applicationManager.PopulateAsync(descriptor, existing, cancellationToken);
+
+        if (string.Equals(descriptor.ClientType, OpenIddictConstants.ClientTypes.Public, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Client '{clientId}' is public and cannot have a client secret.");
+        }
+
+        var rotatedSecret = NormalizeRotatedSecret(newClientSecret);
+        descriptor.ClientSecret = rotatedSecret;
+        descriptor.ClientType = OpenIddictConstants.ClientTypes.Confidential;
+
+        await applicationManager.UpdateAsync(existing, descriptor, cancellationToken);
+
+        return new RotateOpenIdClientSecretResponse
+        {
+            ClientId = descriptor.ClientId ?? clientId,
+            ClientSecret = rotatedSecret,
+            RotatedAtUtc = DateTimeOffset.UtcNow
+        };
+    }
+
     public async Task UpsertBootstrapClientAsync(
         IdentityProviderClientOptions options,
         CancellationToken cancellationToken = default)
@@ -144,6 +181,27 @@ public sealed class IdentityProviderClientService(
         {
             throw new ArgumentException("ClientId must be provided.", nameof(clientId));
         }
+    }
+
+    private static string NormalizeRotatedSecret(string? clientSecret)
+    {
+        if (string.IsNullOrWhiteSpace(clientSecret))
+        {
+            return GenerateClientSecret();
+        }
+
+        var normalized = clientSecret.Trim();
+        if (normalized.Length < 16)
+        {
+            throw new ArgumentException("ClientSecret must be at least 16 characters.", nameof(clientSecret));
+        }
+
+        return normalized;
+    }
+
+    private static string GenerateClientSecret()
+    {
+        return WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(48));
     }
 
     private static ClientConfiguration NormalizeRequest(

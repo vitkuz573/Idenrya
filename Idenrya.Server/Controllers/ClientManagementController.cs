@@ -84,4 +84,35 @@ public sealed class ClientManagementController(
             return ValidationProblem(ModelState);
         }
     }
+
+    [HttpPost("{clientId}/rotate-secret")]
+    public async Task<ActionResult<RotateOpenIdClientSecretResponse>> RotateSecret(
+        string clientId,
+        [FromBody] RotateOpenIdClientSecretRequest? request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var rotated = await clientService.RotateSecretAsync(
+                clientId,
+                request?.ClientSecret,
+                cancellationToken);
+
+            return rotated is null ? NotFound() : Ok(rotated);
+        }
+        catch (ArgumentException exception)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            return ValidationProblem(ModelState);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Client secret rotation failed",
+                Detail = exception.Message,
+                Status = StatusCodes.Status409Conflict
+            });
+        }
+    }
 }

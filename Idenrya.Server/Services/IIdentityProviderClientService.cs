@@ -20,6 +20,11 @@ public interface IIdentityProviderClientService
 
     Task<bool> DeleteAsync(string clientId, CancellationToken cancellationToken = default);
 
+    Task<RotateOpenIdClientSecretResponse?> RotateSecretAsync(
+        string clientId,
+        string? newClientSecret,
+        CancellationToken cancellationToken = default);
+
     Task UpsertBootstrapClientAsync(
         IdentityProviderClientOptions options,
         CancellationToken cancellationToken = default);

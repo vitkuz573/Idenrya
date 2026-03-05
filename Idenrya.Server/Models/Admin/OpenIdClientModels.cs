@@ -67,3 +67,17 @@ public sealed class OpenIdClientResponse
 
     public List<string> Scopes { get; set; } = [];
 }
+
+public sealed class RotateOpenIdClientSecretRequest
+{
+    public string? ClientSecret { get; set; }
+}
+
+public sealed class RotateOpenIdClientSecretResponse
+{
+    public string ClientId { get; set; } = string.Empty;
+
+    public string ClientSecret { get; set; } = string.Empty;
+
+    public DateTimeOffset RotatedAtUtc { get; set; }
+}
