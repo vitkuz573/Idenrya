@@ -98,3 +98,12 @@ public sealed class OpenIdClientSecretMetadataResponse
 
     public string? SecretRotationSource { get; set; }
 }
+
+public sealed class OpenIdClientSecretRotationAuditResponse
+{
+    public string ClientId { get; set; } = string.Empty;
+
+    public DateTimeOffset RotatedAtUtc { get; set; }
+
+    public string Source { get; set; } = string.Empty;
+}

@@ -44,6 +44,24 @@ public sealed class ClientManagementController(
         }
     }
 
+    [HttpGet("{clientId}/secret-rotations")]
+    public async Task<ActionResult<IReadOnlyList<OpenIdClientSecretRotationAuditResponse>>> ListSecretRotations(
+        string clientId,
+        [FromQuery] int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var history = await clientService.ListSecretRotationsAsync(clientId, take, cancellationToken);
+            return history is null ? NotFound() : Ok(history);
+        }
+        catch (ArgumentException exception)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            return ValidationProblem(ModelState);
+        }
+    }
+
     [HttpPost]
     public async Task<ActionResult<OpenIdClientResponse>> Create(
         [FromBody] CreateOpenIdClientRequest request,

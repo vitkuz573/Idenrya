@@ -13,6 +13,11 @@ public interface IIdentityProviderClientService
         string clientId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<OpenIdClientSecretRotationAuditResponse>?> ListSecretRotationsAsync(
+        string clientId,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<OpenIdClientResponse> CreateAsync(
         CreateOpenIdClientRequest request,
         CancellationToken cancellationToken = default);

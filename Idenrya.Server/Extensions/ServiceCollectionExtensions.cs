@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthorizationRequestParameterMerger, AuthorizationRequestParameterMerger>();
         services.AddScoped<IAuthorizationRequestObjectResolver, AuthorizationRequestObjectResolver>();
         services.AddSingleton<IIdentityProviderScopeService, IdentityProviderScopeService>();
+        services.AddScoped<IIdentityProviderClientSecretAuditService, IdentityProviderClientSecretAuditService>();
         services.AddScoped<IIdentityProviderClientService, IdentityProviderClientService>();
         services.AddScoped<IIdentityProviderUserService, IdentityProviderUserService>();
         services.AddScoped<IIdentityProviderRoleService, IdentityProviderRoleService>();

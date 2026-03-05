@@ -9,7 +9,8 @@ namespace Idenrya.Server.Services;
 
 public sealed class IdentityProviderClientService(
     IOpenIddictApplicationManager applicationManager,
-    IIdentityProviderScopeService scopeService) : IIdentityProviderClientService
+    IIdentityProviderScopeService scopeService,
+    IIdentityProviderClientSecretAuditService clientSecretAuditService) : IIdentityProviderClientService
 {
     private const string SecretLastRotatedAtUnixPropertyName = "idenrya.secret_last_rotated_at_unix";
     private const string SecretRotationSourcePropertyName = "idenrya.secret_rotation_source";
@@ -81,6 +82,22 @@ public sealed class IdentityProviderClientService(
         };
     }
 
+    public async Task<IReadOnlyList<OpenIdClientSecretRotationAuditResponse>?> ListSecretRotationsAsync(
+        string clientId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateClientId(clientId);
+
+        var application = await applicationManager.FindByClientIdAsync(clientId, cancellationToken);
+        if (application is null)
+        {
+            return null;
+        }
+
+        return await clientSecretAuditService.ListAsync(clientId, take, cancellationToken);
+    }
+
     public async Task<OpenIdClientResponse> CreateAsync(
         CreateOpenIdClientRequest request,
         CancellationToken cancellationToken = default)
@@ -103,13 +120,23 @@ public sealed class IdentityProviderClientService(
             throw new InvalidOperationException($"Client '{request.ClientId}' already exists.");
         }
 
+        var rotatedAtUtc = DateTimeOffset.UtcNow;
         var descriptor = BuildDescriptor(request.ClientId, normalized);
         ApplySecretMetadata(
             descriptor,
             normalized.PublicClient,
-            DateTimeOffset.UtcNow,
+            rotatedAtUtc,
             SecretRotationSourceCreate);
         await applicationManager.CreateAsync(descriptor, cancellationToken);
+
+        if (!normalized.PublicClient)
+        {
+            await clientSecretAuditService.RecordAsync(
+                request.ClientId,
+                rotatedAtUtc,
+                SecretRotationSourceCreate,
+                cancellationToken);
+        }
 
         var created = await applicationManager.FindByClientIdAsync(request.ClientId, cancellationToken)
                       ?? throw new InvalidOperationException(
@@ -141,13 +168,23 @@ public sealed class IdentityProviderClientService(
             return null;
         }
 
+        var rotatedAtUtc = DateTimeOffset.UtcNow;
         var descriptor = BuildDescriptor(clientId, normalized);
         ApplySecretMetadata(
             descriptor,
             normalized.PublicClient,
-            DateTimeOffset.UtcNow,
+            rotatedAtUtc,
             SecretRotationSourceUpdate);
         await applicationManager.UpdateAsync(existing, descriptor, cancellationToken);
+
+        if (!normalized.PublicClient)
+        {
+            await clientSecretAuditService.RecordAsync(
+                clientId,
+                rotatedAtUtc,
+                SecretRotationSourceUpdate,
+                cancellationToken);
+        }
 
         return await BuildResponseAsync(existing, cancellationToken);
     }
@@ -196,6 +233,11 @@ public sealed class IdentityProviderClientService(
         ApplySecretMetadata(descriptor, publicClient: false, rotatedAtUtc, rotationSource);
 
         await applicationManager.UpdateAsync(existing, descriptor, cancellationToken);
+        await clientSecretAuditService.RecordAsync(
+            clientId,
+            rotatedAtUtc,
+            rotationSource,
+            cancellationToken);
 
         return new RotateOpenIdClientSecretResponse
         {
@@ -223,18 +265,30 @@ public sealed class IdentityProviderClientService(
 
         var existing = await applicationManager.FindByClientIdAsync(options.ClientId, cancellationToken);
         var descriptor = BuildDescriptor(options.ClientId, normalized);
-        ApplySecretMetadata(
-            descriptor,
-            normalized.PublicClient,
-            DateTimeOffset.UtcNow,
-            SecretRotationSourceBootstrap);
 
         if (existing is null)
         {
+            var rotatedAtUtc = DateTimeOffset.UtcNow;
+            ApplySecretMetadata(
+                descriptor,
+                normalized.PublicClient,
+                rotatedAtUtc,
+                SecretRotationSourceBootstrap);
             await applicationManager.CreateAsync(descriptor, cancellationToken);
+            if (!normalized.PublicClient)
+            {
+                await clientSecretAuditService.RecordAsync(
+                    options.ClientId,
+                    rotatedAtUtc,
+                    SecretRotationSourceBootstrap,
+                    cancellationToken);
+            }
             return;
         }
 
+        var existingDescriptor = new OpenIddictApplicationDescriptor();
+        await applicationManager.PopulateAsync(existingDescriptor, existing, cancellationToken);
+        CopySecretMetadata(existingDescriptor, descriptor);
         await applicationManager.UpdateAsync(existing, descriptor, cancellationToken);
     }
 
@@ -316,6 +370,29 @@ public sealed class IdentityProviderClientService(
             RotatedAtUtc = rotatedAtUtc,
             Source = string.IsNullOrWhiteSpace(source) ? null : source
         };
+    }
+
+    private static void CopySecretMetadata(
+        OpenIddictApplicationDescriptor sourceDescriptor,
+        OpenIddictApplicationDescriptor targetDescriptor)
+    {
+        if (sourceDescriptor.Properties.TryGetValue(SecretLastRotatedAtUnixPropertyName, out var rotatedAtProperty))
+        {
+            targetDescriptor.Properties[SecretLastRotatedAtUnixPropertyName] = rotatedAtProperty;
+        }
+        else
+        {
+            targetDescriptor.Properties.Remove(SecretLastRotatedAtUnixPropertyName);
+        }
+
+        if (sourceDescriptor.Properties.TryGetValue(SecretRotationSourcePropertyName, out var sourceProperty))
+        {
+            targetDescriptor.Properties[SecretRotationSourcePropertyName] = sourceProperty;
+        }
+        else
+        {
+            targetDescriptor.Properties.Remove(SecretRotationSourcePropertyName);
+        }
     }
 
     private static ClientConfiguration NormalizeRequest(
