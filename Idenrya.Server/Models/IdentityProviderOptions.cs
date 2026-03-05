@@ -6,9 +6,29 @@ public sealed class IdentityProviderOptions
 
     public string? Issuer { get; set; }
 
+    public List<string> SupportedScopes { get; set; } =
+    [
+        OpenIdScopeNames.OpenId,
+        OpenIdScopeNames.Profile,
+        OpenIdScopeNames.Email,
+        OpenIdScopeNames.Address,
+        OpenIdScopeNames.Phone,
+        OpenIdScopeNames.OfflineAccess
+    ];
+
     public IdentityProviderBootstrapOptions Bootstrap { get; set; } = new();
 
     public IdentityProviderCredentialsOptions Credentials { get; set; } = new();
+}
+
+public static class OpenIdScopeNames
+{
+    public const string OpenId = "openid";
+    public const string Profile = "profile";
+    public const string Email = "email";
+    public const string Address = "address";
+    public const string Phone = "phone";
+    public const string OfflineAccess = "offline_access";
 }
 
 public sealed class IdentityProviderCredentialsOptions

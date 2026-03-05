@@ -5,7 +5,8 @@ using OpenIddict.Abstractions;
 namespace Idenrya.Server.Services;
 
 public sealed class IdentityProviderClientService(
-    IOpenIddictApplicationManager applicationManager) : IIdentityProviderClientService
+    IOpenIddictApplicationManager applicationManager,
+    IIdentityProviderScopeService scopeService) : IIdentityProviderClientService
 {
     public async Task<IReadOnlyList<OpenIdClientResponse>> ListAsync(CancellationToken cancellationToken = default)
     {
@@ -40,12 +41,13 @@ public sealed class IdentityProviderClientService(
         CancellationToken cancellationToken = default)
     {
         ValidateClientId(request.ClientId);
+        var normalizedScopes = scopeService.NormalizeClientScopes(request.Scopes);
         var normalized = NormalizeRequest(
             request.DisplayName,
             request.ClientSecret,
             request.RedirectUris,
             request.PostLogoutRedirectUris,
-            request.Scopes,
+            normalizedScopes,
             request.PublicClient,
             request.RequirePkce,
             request.ConsentType);
@@ -72,12 +74,13 @@ public sealed class IdentityProviderClientService(
         CancellationToken cancellationToken = default)
     {
         ValidateClientId(clientId);
+        var normalizedScopes = scopeService.NormalizeClientScopes(request.Scopes);
         var normalized = NormalizeRequest(
             request.DisplayName,
             request.ClientSecret,
             request.RedirectUris,
             request.PostLogoutRedirectUris,
-            request.Scopes,
+            normalizedScopes,
             request.PublicClient,
             request.RequirePkce,
             request.ConsentType);
@@ -112,12 +115,13 @@ public sealed class IdentityProviderClientService(
         CancellationToken cancellationToken = default)
     {
         ValidateClientId(options.ClientId);
+        var normalizedScopes = scopeService.NormalizeClientScopes(options.Scopes);
         var normalized = NormalizeRequest(
             options.DisplayName,
             options.ClientSecret,
             options.RedirectUris,
             [],
-            options.Scopes,
+            normalizedScopes,
             publicClient: string.IsNullOrWhiteSpace(options.ClientSecret),
             requirePkce: options.RequirePkce,
             consentType: OpenIddictConstants.ConsentTypes.Implicit);
@@ -147,7 +151,7 @@ public sealed class IdentityProviderClientService(
         string? clientSecret,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> scopes,
+        IEnumerable<string> normalizedScopes,
         bool publicClient,
         bool requirePkce,
         string consentType)
@@ -161,16 +165,6 @@ public sealed class IdentityProviderClientService(
             postLogoutRedirectUris,
             required: false,
             parameterName: nameof(postLogoutRedirectUris));
-
-        var normalizedScopes = scopes
-            .Where(static scope => !string.IsNullOrWhiteSpace(scope))
-            .Select(static scope => scope.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        if (normalizedScopes.Count == 0)
-        {
-            normalizedScopes.Add(OpenIddictConstants.Scopes.OpenId);
-        }
 
         var normalizedConsentType = NormalizeConsentType(consentType);
 
@@ -187,7 +181,7 @@ public sealed class IdentityProviderClientService(
             ClientSecret = string.IsNullOrWhiteSpace(clientSecret) ? null : clientSecret,
             RedirectUris = normalizedRedirectUris,
             PostLogoutRedirectUris = normalizedPostLogoutRedirectUris,
-            Scopes = normalizedScopes,
+            Scopes = normalizedScopes.ToList(),
             PublicClient = publicClient,
             RequirePkce = requirePkce,
             ConsentType = normalizedConsentType

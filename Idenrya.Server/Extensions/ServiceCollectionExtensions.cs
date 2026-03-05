@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthorizationErrorRedirectUriBuilder, AuthorizationErrorRedirectUriBuilder>();
         services.AddScoped<IAuthorizationRequestParameterMerger, AuthorizationRequestParameterMerger>();
         services.AddScoped<IAuthorizationRequestObjectResolver, AuthorizationRequestObjectResolver>();
+        services.AddSingleton<IIdentityProviderScopeService, IdentityProviderScopeService>();
         services.AddScoped<IIdentityProviderClientService, IdentityProviderClientService>();
         services.AddScoped<IIdentityProviderUserService, IdentityProviderUserService>();
         services.AddScoped<IIdentityProviderRoleService, IdentityProviderRoleService>();
@@ -74,6 +75,7 @@ public static class ServiceCollectionExtensions
         var identityProviderOptions =
             configuration.GetSection(IdentityProviderOptions.SectionName).Get<IdentityProviderOptions>()
             ?? new IdentityProviderOptions();
+        var supportedScopes = IdentityProviderScopeNormalizer.NormalizeSupportedScopes(identityProviderOptions.SupportedScopes);
 
         services.AddOpenIddict()
             .AddCore(options =>
@@ -99,13 +101,7 @@ public static class ServiceCollectionExtensions
                 options.AllowAuthorizationCodeFlow();
                 options.AllowRefreshTokenFlow();
 
-                options.RegisterScopes(
-                    OpenIddictConstants.Scopes.OpenId,
-                    OpenIddictConstants.Scopes.Profile,
-                    OpenIddictConstants.Scopes.Email,
-                    OpenIddictConstants.Scopes.Address,
-                    OpenIddictConstants.Scopes.Phone,
-                    OpenIddictConstants.Scopes.OfflineAccess);
+                options.RegisterScopes(supportedScopes);
 
                 ConfigureServerCredentials(options, identityProviderOptions.Credentials, hostEnvironment.ContentRootPath);
 
