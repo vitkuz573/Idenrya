@@ -47,6 +47,8 @@ public sealed class IdentityProviderClientOptions
     public List<string> RedirectUris { get; set; } = [];
 
     public List<string> Scopes { get; set; } = [];
+
+    public bool RequirePkce { get; set; }
 }
 
 public sealed class IdentityProviderUserOptions
@@ -68,6 +70,8 @@ public sealed class IdentityProviderUserOptions
     public string FamilyName { get; set; } = string.Empty;
 
     public string Address { get; set; } = string.Empty;
+
+    public List<string> Roles { get; set; } = [];
 
     public Dictionary<string, string?> Claims { get; set; } = new(StringComparer.Ordinal);
 }

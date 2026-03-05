@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAuthorizationErrorRedirectUriBuilder, AuthorizationErrorRedirectUriBuilder>();
         services.AddScoped<IAuthorizationRequestParameterMerger, AuthorizationRequestParameterMerger>();
         services.AddScoped<IAuthorizationRequestObjectResolver, AuthorizationRequestObjectResolver>();
+        services.AddScoped<IIdentityProviderClientService, IdentityProviderClientService>();
         services.AddScoped<IIdentityProviderSeeder, IdentityProviderSeeder>();
 
         return services;

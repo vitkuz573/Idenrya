@@ -9,7 +9,8 @@ namespace Idenrya.Server.Services;
 public sealed class IdentityProviderSeeder(
     IOptions<IdentityProviderOptions> options,
     UserManager<ApplicationUser> userManager,
-    IOpenIddictApplicationManager appManager,
+    RoleManager<IdentityRole> roleManager,
+    IIdentityProviderClientService clientService,
     ILogger<IdentityProviderSeeder> logger) : IIdentityProviderSeeder
 {
     private static readonly string[] ManagedProfileClaimTypes =
@@ -48,7 +49,7 @@ public sealed class IdentityProviderSeeder(
         foreach (var client in bootstrap.Clients.Where(static client => !string.IsNullOrWhiteSpace(client.ClientId)))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await EnsureSeedClientAsync(client);
+            await clientService.UpsertBootstrapClientAsync(client, cancellationToken);
         }
     }
 
@@ -77,6 +78,7 @@ public sealed class IdentityProviderSeeder(
             }
 
             await EnsureManagedClaimsAsync(user, userOptions);
+            await EnsureUserRolesAsync(user, userOptions.Roles);
             return;
         }
 
@@ -102,6 +104,7 @@ public sealed class IdentityProviderSeeder(
         }
 
         await EnsureManagedClaimsAsync(user, userOptions);
+        await EnsureUserRolesAsync(user, userOptions.Roles);
     }
 
     private async Task EnsureManagedClaimsAsync(
@@ -178,60 +181,49 @@ public sealed class IdentityProviderSeeder(
         user.Address = options.Address;
     }
 
-    private async Task EnsureSeedClientAsync(IdentityProviderClientOptions clientOptions)
+    private async Task EnsureUserRolesAsync(ApplicationUser user, IEnumerable<string> roles)
     {
-        if (clientOptions.RedirectUris.Count == 0)
+        var normalizedRoles = roles
+            .Where(static role => !string.IsNullOrWhiteSpace(role))
+            .Select(static role => role.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (normalizedRoles.Length == 0)
         {
-            throw new InvalidOperationException($"Seed client '{clientOptions.ClientId}' must have at least one redirect URI.");
-        }
-
-        var descriptor = new OpenIddictApplicationDescriptor
-        {
-            ClientId = clientOptions.ClientId,
-            ClientSecret = clientOptions.ClientSecret,
-            DisplayName = clientOptions.DisplayName,
-            ApplicationType = OpenIddictConstants.ApplicationTypes.Web,
-            ClientType = string.IsNullOrWhiteSpace(clientOptions.ClientSecret)
-                ? OpenIddictConstants.ClientTypes.Public
-                : OpenIddictConstants.ClientTypes.Confidential,
-            ConsentType = OpenIddictConstants.ConsentTypes.Implicit
-        };
-
-        foreach (var redirectUri in clientOptions.RedirectUris.Where(static uri => !string.IsNullOrWhiteSpace(uri)))
-        {
-            descriptor.RedirectUris.Add(new Uri(redirectUri));
-        }
-
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Authorization);
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Token);
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Introspection);
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.Endpoints.Revocation);
-
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode);
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.GrantTypes.RefreshToken);
-        descriptor.Permissions.Add(OpenIddictConstants.Permissions.ResponseTypes.Code);
-
-        var scopes = clientOptions.Scopes
-            .Where(static scope => !string.IsNullOrWhiteSpace(scope))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        if (scopes.Count == 0)
-        {
-            scopes.Add(OpenIddictConstants.Scopes.OpenId);
-        }
-
-        foreach (var scope in scopes)
-        {
-            descriptor.Permissions.Add(OpenIddictConstants.Permissions.Prefixes.Scope + scope);
-        }
-
-        var existing = await appManager.FindByClientIdAsync(clientOptions.ClientId);
-        if (existing is null)
-        {
-            await appManager.CreateAsync(descriptor);
             return;
         }
 
-        await appManager.UpdateAsync(existing, descriptor);
+        foreach (var role in normalizedRoles)
+        {
+            if (await roleManager.RoleExistsAsync(role))
+            {
+                continue;
+            }
+
+            var createRole = await roleManager.CreateAsync(new IdentityRole(role));
+            if (!createRole.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to create role '{role}' for seed user '{user.UserName}': " +
+                    string.Join(", ", createRole.Errors.Select(error => error.Description)));
+            }
+        }
+
+        var existingRoles = await userManager.GetRolesAsync(user);
+        var missingRoles = normalizedRoles
+            .Where(role => !existingRoles.Contains(role, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        if (missingRoles.Length == 0)
+        {
+            return;
+        }
+
+        var addRoles = await userManager.AddToRolesAsync(user, missingRoles);
+        if (!addRoles.Succeeded)
+        {
+            throw new InvalidOperationException(
+                $"Failed to assign roles to seed user '{user.UserName}': " +
+                string.Join(", ", addRoles.Errors.Select(error => error.Description)));
+        }
     }
 }
